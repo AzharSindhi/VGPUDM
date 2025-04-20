@@ -243,46 +243,64 @@ class PointNorm(nn.Module):
             return self.norm(x).permute(0,2,1)
         return self.norm(x)
 
+from .fusion_modules import MultiStreamFusion
+from .feature_processors import LDMFeatureProcessor
+
 class PointNet2CloudCondition(PointNet2SemSegSSG):
 
     def _build_model(self):
+        super()._build_model()
+        
+        # Get feature dimensions
+        main_dim = self.hparams['architecture']['encoder_feature_dim'][-1]
+        cond_dim = main_dim  # Same as main stream
+        ldm_dim = 512  # Default LDM dimension
+        
+        # Initialize feature processors
+        self.ldm_processor = LDMFeatureProcessor(
+            input_dim=main_dim,
+            ldm_latent_dim=ldm_dim
+        )
+        
+        # Initialize fusion module
+        self.feature_fusion = MultiStreamFusion({
+            'main': main_dim,
+            'conditional': cond_dim,
+            'ldm': ldm_dim
+        })
+        
+        # Other initializations
         self.l_uvw = None
         self.encoder_cond_features = None
         self.decoder_cond_features = None
         self.global_feature = None
-
+        
+        # Settings
         self.attention_setting = self.hparams.get("attention_setting", None)
         self.FeatureMapper_attention_setting = copy.deepcopy(self.attention_setting)
         if self.FeatureMapper_attention_setting is not None:
             self.FeatureMapper_attention_setting['use_attention_module'] = (
-                            self.FeatureMapper_attention_setting['add_attention_to_FeatureMapper_module'])
-
+                self.FeatureMapper_attention_setting['add_attention_to_FeatureMapper_module'])
+        
         self.global_attention_setting = self.hparams.get('global_attention_setting', None)
-
         self.bn = self.hparams.get("bn", True)
         self.scale_factor = 1
         self.record_neighbor_stats = self.hparams["record_neighbor_stats"]
+        
+        # Class condition
         if self.hparams["include_class_condition"]:
-            self.class_emb = nn.Embedding(self.hparams["num_class"], self.hparams["class_condition_dim"])
-
+            self.class_emb = nn.Embedding(
+                self.hparams["num_class"], 
+                self.hparams["class_condition_dim"]
+            )
+        
+        # Input feature settings
         in_fea_dim = self.hparams['in_fea_dim']
         partial_in_fea_dim = self.hparams.get('partial_in_fea_dim', in_fea_dim)
         self.attach_position_to_input_feature = self.hparams['attach_position_to_input_feature']
         if self.attach_position_to_input_feature:
             in_fea_dim = in_fea_dim + 3
-            partial_in_fea_dim = partial_in_fea_dim + 3
-
-        self.partial_in_fea_dim = partial_in_fea_dim
-        self.include_abs_coordinate = self.hparams['include_abs_coordinate']
-        self.pooling = self.hparams.get('pooling', 'max')
-
-        self.network_activation = self.hparams.get('activation', 'relu')
-        assert self.network_activation in ['relu', 'swish']
-        if self.network_activation == 'relu':
-            self.network_activation_function = nn.ReLU(True)
-        elif self.network_activation == 'swish':
-            self.network_activation_function = Swish()
-
+        
         self.include_local_feature = self.hparams.get('include_local_feature', True)
         self.include_global_feature = self.hparams.get('include_global_feature', False)
 
@@ -335,32 +353,6 @@ class PointNet2CloudCondition(PointNet2SemSegSSG):
             encoder_feature_map_dim = mapper_arch['encoder_feature_map_dim']#[32, 32, 64, 64]
 
 
-        # ---- Cross-Attention ----
-        q = 128
-        kv = 512
-        self.att_c = AttentionFusion(
-            dim=kv,  # the image channels
-            depth=0,  # depth of net (self-attention - Processing的数量)
-            latent_dim=q,  # the PC channels
-            cross_heads=1,  # number of heads for cross attention. paper said 1
-            latent_heads=8,  # number of heads for latent self attention, 8
-            cross_dim_head=32,  # number of dimensions per cross attention head
-            latent_dim_head=6,  # number of dimensions per latent self attention head
-            pe=False
-        )
-        self.att_noise = AttentionFusion(
-            dim=q,  # the image channels
-            depth=0,  # depth of net (self-attention - Processing的数量)
-            latent_dim=kv,  # the PC channels
-            cross_heads=1,  # number of heads for cross attention. paper said 1
-            latent_heads=8,  # number of heads for latent self attention, 8
-            cross_dim_head=32,  # number of dimensions per cross attention head
-            latent_dim_head=6,  # number of dimensions per latent self attention head
-            pe=False
-        )
-        # ---- Cross-Attention ----
-
-
         # build SA module for the noisy point cloud x_t
         arch = self.hparams['architecture']
         npoint = arch['npoint']#[1024, 256, 64, 16]
@@ -387,7 +379,8 @@ class PointNet2CloudCondition(PointNet2SemSegSSG):
             activation=self.network_activation,
             bn=self.bn,
             attention_setting=self.attention_setting,
-            global_attention_setting=self.global_attention_setting)
+            global_attention_setting=self.global_attention_setting
+        )
 
         if self.include_local_feature:
             # build FP module for condition cloud
@@ -411,7 +404,8 @@ class PointNet2CloudCondition(PointNet2SemSegSSG):
                 nsample=nsample_condition,
                 neighbor_def=condition_arch['neighbor_definition'],
                 activation=self.network_activation, bn=self.bn,
-                attention_setting=self.attention_setting)
+                attention_setting=self.attention_setting
+            )
 
             # build mapper from condition cloud to input cloud at decoder
             decoder_feature_map_dim = mapper_arch['decoder_feature_map_dim']#[32, 32, 64, 64, 128]
@@ -472,6 +466,10 @@ class PointNet2CloudCondition(PointNet2SemSegSSG):
                 copy.deepcopy(self.network_activation_function),
                 nn.Conv1d(128, self.hparams['out_dim'], kernel_size=1),
             )
+
+    def set_ldm_model(self, model):
+        """Set the LDM model to use for feature processing"""
+        self.ldm_processor.set_ldm_model(model)
 
     def reset_cond_features(self):
         self.l_uvw = None
@@ -565,23 +563,33 @@ class PointNet2CloudCondition(PointNet2SemSegSSG):
             l_features.append(li_features)
             # ---- Encoder ----
 
-        # ---- Cross-Attention ----
-        l_cond_features[-1] = self.att_c(
-            l_features[-1].permute(0, 2, 1),
-            queries_encoder=l_cond_features[-1].permute(0, 2, 1)
-        ).permute(0, 2, 1).contiguous()
-
-        l_features[-1] = self.att_noise(
-            l_cond_features[-1].permute(0, 2, 1),
-            queries_encoder=l_features[-1].permute(0, 2, 1)
-        ).permute(0, 2, 1).contiguous()
-        # ---- Cross-Attention ----
-
-        if self.include_local_feature:
-            if use_retained_condition_feature and self.l_uvw is None:
-                self.l_uvw = l_uvw
-                self.encoder_cond_features = copy.deepcopy(l_cond_features)
-
+        # Prepare features for fusion
+        features = {
+            'main': l_features[-1],
+            'conditional': l_cond_features[-1]
+        }
+        
+        # Process through LDM if available
+        ldm_features, ldm_success = self.ldm_processor(features['main'])
+        if ldm_success:
+            features['ldm'] = ldm_features
+            # Store features for loss calculation
+            self.current_features = {
+                'main': features['main'],
+                'conditional': features['conditional'],
+                'ldm': features['ldm']
+            }
+        else:
+            self.current_features = None
+        
+        # Perform multi-stream fusion
+        updated_features = self.feature_fusion(features)
+        
+        # Update feature streams
+        l_features[-1] = updated_features['main']
+        l_cond_features[-1] = updated_features['conditional']
+            
+        # Continue with decoder
         for i in range(-1, -(len(self.FP_modules) + 1), -1):
 
             if self.include_local_feature:
@@ -627,4 +635,6 @@ class PointNet2CloudCondition(PointNet2SemSegSSG):
         else:
             return out
 
-
+    def get_current_features(self):
+        """Get current feature vectors for loss calculation"""
+        return getattr(self, 'current_features', None)

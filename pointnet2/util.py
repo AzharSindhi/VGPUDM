@@ -9,6 +9,7 @@ from datetime import datetime
 from einops import rearrange, repeat
 from pointops.functions import pointops
 import torch.backends.cudnn as cudnn
+import torch.nn.functional as F
 
 def pc_normalize(pc):
     centroid = np.mean(pc, axis=0)
@@ -499,6 +500,45 @@ def sampling_ddim(
         net.reset_cond_features()
     return x,condition_pre,z
 
+def compute_feature_alignment_loss(features, temperature=1.0):
+    """
+    Compute cosine similarity loss between feature vectors
+    
+    Args:
+        features: dict containing feature tensors for 'main', 'conditional', and 'ldm'
+        temperature: temperature for cosine similarity (higher = softer attention)
+        
+    Returns:
+        tuple: (main_ldm_loss, cond_ldm_loss) alignment losses
+    """
+    if features is None:
+        return 0.0, 0.0
+        
+    # Get features
+    main_features = features['main']
+    cond_features = features['conditional']
+    ldm_features = features['ldm']
+    
+    # [B, C, N] -> [B, N, C]
+    main_features = main_features.permute(0, 2, 1)
+    cond_features = cond_features.permute(0, 2, 1)
+    ldm_features = ldm_features.permute(0, 2, 1)
+    
+    # Normalize features
+    main_norm = F.normalize(main_features, p=2, dim=-1)
+    cond_norm = F.normalize(cond_features, p=2, dim=-1)
+    ldm_norm = F.normalize(ldm_features, p=2, dim=-1)
+    
+    # Compute cosine similarities
+    main_ldm_sim = torch.bmm(main_norm, ldm_norm.transpose(1, 2)) / temperature
+    cond_ldm_sim = torch.bmm(cond_norm, ldm_norm.transpose(1, 2)) / temperature
+    
+    # Loss is negative similarity (we want to maximize similarity)
+    main_ldm_loss = -main_ldm_sim.mean()
+    cond_ldm_loss = -cond_ldm_sim.mean()
+    
+    return main_ldm_loss, cond_ldm_loss
+
 def training_loss(
         net,
         loss_fn,
@@ -507,7 +547,8 @@ def training_loss(
         label=None,
         condition=None,
         alpha=1.0,
-        gamma=None
+        gamma=None,
+        feature_alignment_weight=1.0  # Weight for feature alignment losses
 ):
     _dh = diffusion_hyperparams
     T, Alpha_bar = _dh["T"], _dh["Alpha_bar"]
@@ -532,6 +573,12 @@ def training_loss(
         loss = mse_theta + alpha * mse_psi
     else:
         loss = loss_fn(epsilon_theta, z)
+        
+    # Add feature alignment loss if features are available
+    features = net.get_current_features()
+    if features is not None:
+        main_ldm_loss, cond_ldm_loss = compute_feature_alignment_loss(features)
+        loss = loss + feature_alignment_weight * (main_ldm_loss + cond_ldm_loss)
 
     return loss
 
@@ -551,7 +598,8 @@ def calc_t_emb(ts, t_emb_dim):
     t_emb = t_emb.to(ts.device)  # shape (half_dim)
     # ts is of shape (B,1)
     t_emb = ts * t_emb
-    t_emb = torch.cat((torch.sin(t_emb), torch.cos(t_emb)), 1)
+    t_emb = torch.cat((torch.sin(t_emb),
+                      torch.cos(t_emb)), 1)
 
     return t_emb
 
