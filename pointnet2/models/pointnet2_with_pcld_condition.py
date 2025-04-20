@@ -244,20 +244,20 @@ class PointNorm(nn.Module):
         return self.norm(x)
 
 from .fusion_modules import MultiStreamFusion
-from .feature_processors import LDMFeatureProcessor
+from .ldm_processor import LDMProcessor
 
 class PointNet2CloudCondition(PointNet2SemSegSSG):
 
-    def _build_model(self):
-        super()._build_model()
+    def __init__(self, num_classes, num_channels=3, use_xyz=True, model_cfg=None):
+        super().__init__(num_classes=num_classes, num_channels=num_channels, use_xyz=use_xyz, model_cfg=model_cfg)
         
-        # Get feature dimensions
-        main_dim = self.hparams['architecture']['encoder_feature_dim'][-1]
+        # Feature dimensions
+        main_dim = 256  # Default main stream dimension
         cond_dim = main_dim  # Same as main stream
         ldm_dim = 512  # Default LDM dimension
         
-        # Initialize feature processors
-        self.ldm_processor = LDMFeatureProcessor(
+        # Initialize LDM processor
+        self.ldm_processor = LDMProcessor(
             input_dim=main_dim,
             ldm_latent_dim=ldm_dim
         )
