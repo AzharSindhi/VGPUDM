@@ -92,7 +92,6 @@
         "output_directory": "logs/checkpoint",
         "tensorboard_directory": "logs/tensorboard",
         "epochs_per_ckpt": 10,
-        "iters_per_logging": 50,
         "n_epochs": 2000,
         "learning_rate": 0.0002
     },

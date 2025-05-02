@@ -13,7 +13,7 @@ from models.pointnet2_with_pcld_condition import PointNet2CloudCondition
 from shutil import copyfile
 import copy
 from json_reader import replace_list_with_string_in_a_dict, restore_string_to_list_in_a_dict
-
+from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 
 def split_data(data):
     # load data
@@ -24,6 +24,47 @@ def split_data(data):
 
     return X, condition, class_index, label
 
+def evaluate(model, testloader, diffusion_hyperparams, progress, eval_task_id):
+    model.eval()
+    total_loss = 0.0
+    with torch.no_grad():
+        for data in testloader:
+            # Assuming data format: [dense_pts, sparse_pts, class_index]
+            X, condition, class_index, label = split_data(data)
+
+            # Diffusion process and loss calculation
+            loss = training_loss(model, nn.MSELoss(), X, diffusion_hyperparams, label=label, class_index=class_index, condition=condition)
+            total_loss += loss.item()
+    
+    avg_loss = total_loss / len(testloader)
+    print(f'[Test] Test MSE Loss: {avg_loss:.4f}', flush=True)
+    return avg_loss
+
+def train_one_epoch(model, optimizer, dataloader, diffusion_hyperparams):
+    """Runs the training loop for one epoch."""
+    model.train()
+    epoch_loss = 0.0
+    total_steps_in_epoch = len(dataloader)
+
+    for data in dataloader:
+        # Assuming data format: [dense_pts, sparse_pts, class_index]
+        X, condition, class_index, label = split_data(data)
+
+        # Diffusion process and loss calculation
+        loss = training_loss(model, nn.MSELoss(), X, diffusion_hyperparams, label=label, class_index=class_index, condition=condition)
+
+        # Backward pass and optimization
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        epoch_loss += loss.item()
+
+    avg_train_loss = epoch_loss / total_steps_in_epoch
+    print(f'[Train] Train MSE Loss: {avg_train_loss:.4f}', flush=True)
+    return avg_train_loss
+
+
 def train(
         config_file,
         model_path,
@@ -33,7 +74,6 @@ def train(
         tensorboard_directory,
         n_epochs,
         epochs_per_ckpt,                # 当前多久保存一次模型
-        iters_per_logging,
         learning_rate,
 ):
 
@@ -63,6 +103,9 @@ def train(
 
     trainloader = get_dataloader(trainset_config)
 
+    # Config dataset and dataloader
+    testloader = get_dataloader(trainset_config, phase='test')
+
     net = PointNet2CloudCondition(pointnet_config).cuda()
     net.train()
 
@@ -70,86 +113,58 @@ def train(
     optimizer = torch.optim.Adam(net.parameters(), lr=learning_rate)
 
     # load checkpoint model
-    time0 = time.time()
-    epoch = 0
+    start_epoch = 0
+    best_test_loss = float('inf')
+    # model_path = os.path.join(output_directory, 'latest_checkpoint.pt')
+    # best_model_path = os.path.join(output_directory, 'best_checkpoint.pt')
 
-    try:
-        # load checkpoint file
-        checkpoint = torch.load(model_path, map_location='cpu')
+    if os.path.exists(model_path):
+        try:
+            checkpoint = torch.load(model_path, map_location='cpu')
+            net.load_state_dict(checkpoint['model_state_dict'])
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            start_epoch = checkpoint['epoch'] # Start from the next epoch
+            best_test_loss = checkpoint.get('best_test_loss', float('inf')) # Load best loss if available
+            print(f'Loaded checkpoint from {model_path}, resuming from epoch {start_epoch}', flush=True)
+        except Exception as e:
+            print(f"Error loading checkpoint: {e}. Starting from scratch.", flush=True)
+            start_epoch = 0
+            best_test_loss = float('inf')
+    else:
+        print("No valid checkpoint model found, start training from initialization.", flush=True)
 
-        # feed model dict and optimizer state
-        net.load_state_dict(checkpoint['model_state_dict'])
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        epoch = int(checkpoint['epoch'])
-
-        print(f"---- Loading : {model_path} ----")
-
-        # record training time based on elapsed time
-        time0 -= checkpoint['training_time_seconds']
-        print('checkpoint model loaded successfully', flush=True)
-    except:
-        ckpt_iter = -1
-        print('No valid checkpoint model found, start training from initialization.', flush=True)
-
-    loader_len = len(trainloader)
-    n_iters = int(loader_len * n_epochs) # number of total training steps
-
-    # Loss Function
-    loss_function = nn.MSELoss()
-    n_iter = epoch * loader_len
-    while(n_iter < n_iters + 1):
-        epoch += 1
-        for data in trainloader:
-            # load data
-            X, condition, class_index,label = split_data(data)
-            optimizer.zero_grad()
-
-            loss = training_loss(
-                net,
-                loss_function,
-                X,
-                diffusion_hyperparams,
-                label=label,
-                class_index=class_index,
-                condition=condition,
-            )
-
-            reduced_loss = loss.item()
-            loss.backward()
-            optimizer.step()
-
-            # output to log
-            if(n_iter % iters_per_logging == 0):
-                cprint("[{}]\tepoch({}): {} \titeration({}): {} \tMSE loss: {:.6f}".format(
-                    time.ctime(),
-                    n_epochs,
-                    epoch,
-                    n_iters,
-                    n_iter,
-                    loss.item()),
-                    "blue"
-                )
+    print(f"Training for {n_epochs} epochs...", flush=True)
 
 
-                tb.add_scalar("Log-Train-Loss", torch.log(loss).item(), n_iter)
-                tb.add_scalar("Log-Train-Reduced-Loss", np.log(reduced_loss), n_iter)
+    for epoch in range(start_epoch, n_epochs):
+        epoch_start_time = time.time()
+        
+        # Train for one epoch
+        train_loss = train_one_epoch(net, optimizer, trainloader, diffusion_hyperparams)
+        test_loss = evaluate(net, testloader, diffusion_hyperparams)
+        # log both losses here
+        tb.add_scalar('Log-Train-Loss', train_loss, epoch)
+        tb.add_scalar('Log-Test-Loss', test_loss, epoch)
+        
+        # Optional: Add epoch timing log here if needed
+        epoch_duration = time.time() - epoch_start_time
+        print(f"Epoch {epoch} duration: {epoch_duration:.2f}s", flush=True)
 
-            n_iter += 1
+        # Checkpoint
+        if (epoch) % epochs_per_ckpt == 0:
+            checkpoint = {
+                'epoch': epoch,
+                'model_state_dict': net.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+            }
+            latest_ckpt_path = os.path.join(output_directory, 'latest_checkpoint.pt')
+            torch.save(checkpoint, latest_ckpt_path)
+            if test_loss < best_test_loss:
+                best_test_loss = test_loss
+                best_ckpt_path = os.path.join(output_directory, 'best_checkpoint.pt')
+                torch.save(checkpoint, best_ckpt_path)
 
-        # save checkpoint
-        if (epoch % epochs_per_ckpt == 0):
-            # ---- save checkpoint every epoch ----
-            checkpoint_name = 'pointnet_ckpt_{}_{}.pkl'.format(epoch, loss)
-            checkpoint_path = os.path.join(output_directory, checkpoint_name)
-            torch.save({'iter': n_iter,
-                        'model_state_dict': net.state_dict(),
-                        'optimizer_state_dict': optimizer.state_dict(),
-                        'training_time_seconds': int(time.time() - time0),
-                        'epoch': epoch
-                        },
-                       checkpoint_path
-                       )
-            cprint(f"---- Save : {checkpoint_path} ----","red")
+    tb.close()
 
 
 if __name__ == "__main__":
