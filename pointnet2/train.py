@@ -10,19 +10,19 @@ from termcolor import cprint
 from dataset import get_dataloader
 from util import training_loss, calc_diffusion_hyperparams,find_max_epoch, print_size,set_seed
 from models.pointnet2_with_pcld_condition import PointNet2CloudCondition
-from models.ldm_wrapper import LDMWrapper
 from shutil import copyfile
 import copy
 from json_reader import replace_list_with_string_in_a_dict, restore_string_to_list_in_a_dict
 
 
 def split_data(data):
-
+    # load data
     label = data['label'].cuda()
     X = data['complete'].cuda()
     condition = data['partial'].cuda()
+    class_index = data['class_index'].cuda()
 
-    return X, condition, label
+    return X, condition, class_index, label
 
 def train(
         config_file,
@@ -35,8 +35,6 @@ def train(
         epochs_per_ckpt,                # 当前多久保存一次模型
         iters_per_logging,
         learning_rate,
-        ldm_model_path=None,
-        feature_alignment_weight=1.0  # Weight for feature alignment losses
 ):
 
     local_path = dataset
@@ -66,9 +64,6 @@ def train(
     trainloader = get_dataloader(trainset_config)
 
     net = PointNet2CloudCondition(pointnet_config).cuda()
-    if ldm_model_path is not None:
-        ldm = LDMWrapper(ldm_model_path, device='cuda')
-        net.ldm_model = ldm
     net.train()
 
     # optimizer
@@ -106,7 +101,7 @@ def train(
         epoch += 1
         for data in trainloader:
             # load data
-            X, condition ,label = split_data(data)
+            X, condition, class_index,label = split_data(data)
             optimizer.zero_grad()
 
             loss = training_loss(
@@ -115,8 +110,8 @@ def train(
                 X,
                 diffusion_hyperparams,
                 label=label,
+                class_index=class_index,
                 condition=condition,
-                feature_alignment_weight=feature_alignment_weight
             )
 
             reduced_loss = loss.item()
@@ -159,11 +154,11 @@ def train(
 
 if __name__ == "__main__":
 
-    os.environ["CUDA_VISIBLE_DEVICES"]="1"
+    # os.environ["CUDA_VISIBLE_DEVICES"]="1"
 
 
     # ---- config ----
-    dataset="PUGAN"
+    dataset="ModelNet10"
     check_name=""
     model_path = f"./exp_{dataset.lower()}/{dataset}/logs/checkpoint/{check_name}"
     alpha=1.0
@@ -176,9 +171,7 @@ if __name__ == "__main__":
     parser.add_argument('-a', '--alpha', type=int, default=alpha)
     parser.add_argument('-g', '--gamma', type=int, default=gamma)
     parser.add_argument('-m', '--model_path', type=str, default=model_path)
-    parser.add_argument('-l', '--ldm_model_path', type=str, default=None)
-    parser.add_argument('--feature_alignment_weight', type=float, default=1.0,
-                      help='Weight for feature alignment losses')
+    
     args = parser.parse_args()
 
     args.config = f"./exp_configs/{args.dataset}.json"
@@ -205,6 +198,10 @@ if __name__ == "__main__":
         trainset_config = config["pu1k_dataset_config"]
     elif train_config['dataset'] == 'PUGAN':
         trainset_config = config['pugan_dataset_config']
+    elif train_config['dataset'] == 'ViPC':
+        trainset_config = config['vipc_dataset_config']
+    elif train_config['dataset'] == 'ModelNet10':
+        trainset_config = config['modelnet10_dataset_config']
     else:
         raise Exception('%s dataset is not supported' % train_config['dataset'])
     diffusion_hyperparams = calc_diffusion_hyperparams(**diffusion_config)  # dictionary of all diffusion hyperparameters
@@ -216,6 +213,4 @@ if __name__ == "__main__":
         args.config,
         args.model_path,
         **train_config,
-        ldm_model_path=args.ldm_model_path,
-        feature_alignment_weight=args.feature_alignment_weight
     )

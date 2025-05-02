@@ -546,9 +546,9 @@ def training_loss(
         diffusion_hyperparams,
         label=None,
         condition=None,
+        class_index=None,
         alpha=1.0,
         gamma=None,
-        feature_alignment_weight=1.0  # Weight for feature alignment losses
 ):
     _dh = diffusion_hyperparams
     T, Alpha_bar = _dh["T"], _dh["Alpha_bar"]
@@ -562,6 +562,7 @@ def training_loss(
     epsilon_theta = net(
         xt,
         condition,
+        class_index=class_index,
         ts=diffusion_steps.view(B, ),
         label=label
     )
@@ -575,10 +576,10 @@ def training_loss(
         loss = loss_fn(epsilon_theta, z)
         
     # Add feature alignment loss if features are available
-    features = net.get_current_features()
-    if features is not None:
-        main_ldm_loss, cond_ldm_loss = compute_feature_alignment_loss(features)
-        loss = loss + feature_alignment_weight * (main_ldm_loss + cond_ldm_loss)
+    # features = net.get_current_features()
+    # if features is not None:
+    #     main_ldm_loss, cond_ldm_loss = compute_feature_alignment_loss(features)
+    #     loss = loss + feature_alignment_weight * (main_ldm_loss + cond_ldm_loss)
 
     return loss
 

@@ -1,6 +1,6 @@
 import torch
 import torch.utils.data as data
-from dataloader.dataset_loader import PUGAN,PU1K
+from dataloader.dataset_loader import PUGAN,PU1K, ViPCDataLoaderTest, ModelNet10
 
 def get_dataloader(
         args,
@@ -43,6 +43,30 @@ def get_dataloader(
         )
     elif args['dataset'] == 'PUGAN':
         dataset = PUGAN(
+            args['data_dir'],
+            train=train,
+            scale=args['scale'],
+            npoints=args['npoints'],
+            augmentation=augmentation,
+            return_augmentation_params=return_augmentation_params,
+            R=args["R"]
+        )
+        trainloader = torch.utils.data.DataLoader(
+            dataset,
+            batch_size=batch_size,
+            shuffle=shuffle,
+            num_workers=args['num_workers']
+        )
+    elif args['dataset'] == 'ViPC':
+        dataset = ViPCDataLoaderTest()
+        trainloader = torch.utils.data.DataLoader(
+            dataset,
+            batch_size=batch_size,
+            shuffle=shuffle,
+            num_workers=args['num_workers']
+        )
+    elif args['dataset'] == 'ModelNet10':
+        dataset = ModelNet10(
             args['data_dir'],
             train=train,
             scale=args['scale'],
