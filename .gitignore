@@ -1,0 +1,13 @@
+venv/
+build/
+dist/
+__pycache__
+*.egg-info
+*.egg
+logs/
+.ipynb_checkpoints
+*.ipynb
+*.jpg
+*.png
+*.out
+*.mat
