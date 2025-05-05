@@ -43,7 +43,8 @@ def main(
     for key in diffusion_hyperparams:
         if key != "T":
             diffusion_hyperparams[key] = diffusion_hyperparams[key].cuda()
-
+    
+    pointnet_config['image_fusion_strategy'] = args.image_fusion_strategy
     net = PointNet2CloudCondition(pointnet_config).cuda()
 
     try:
@@ -56,6 +57,7 @@ def main(
     # get data loader
     datasetset_config['batch_size'] = batch_size * torch.cuda.device_count()
     datasetset_config['eval_batch_size'] = batch_size * torch.cuda.device_count()
+    datasetset_config['debug'] = False
     testloader = get_dataloader(datasetset_config, phase=phase)
     data_scale = datasetset_config['scale']
     npoints = datasetset_config['npoints']
@@ -94,9 +96,9 @@ def main(
 if __name__ == "__main__":
 
     set_seed(42)
-    dataset = "PUGAN"
+    dataset = "ModelNet10"
 
-    device_ids = "1"
+    device_ids = "0"
     phase = "test"
     R = 4
     batch_size = 14  # 14 : PUGAN, 43 : PU1K
@@ -111,10 +113,11 @@ if __name__ == "__main__":
     parser.add_argument('--device_ids', type=str, default=device_ids, help='gpu device indices to use')
     parser.add_argument('--gamma', type=float, default=gamma)
     parser.add_argument('--step', type=int, default=step)
+    parser.add_argument('-i', '--image_fusion_strategy', type=str, default="none")
     args = parser.parse_args()
 
     args.config = f"./exp_configs/{args.dataset}.json"
-    args.checkpoint_path = f"./pkls/{args.dataset.lower()}.pkl"
+    args.checkpoint_path = "/home/ez48awud/Documents/implementations/VGPUDM/pointnet2/exp_modelnet10_condition_scratch/ModelNet10/logs/checkpoint/best_checkpoint.pt" #f"./pkls/{args.dataset.lower()}.pkl"
     args.save_dir = f"./test/{args.dataset.lower()}"
 
     os.environ['CUDA_VISIBLE_DEVICES'] = args.device_ids
@@ -132,6 +135,8 @@ if __name__ == "__main__":
         datasetset_config = config["pu1k_dataset_config"]
     elif train_config['dataset'] == 'PUGAN':
         datasetset_config = config["pugan_dataset_config"]
+    elif train_config['dataset'] == 'ModelNet10':
+        datasetset_config = config["modelnet10_dataset_config"]
     else:
         raise Exception('%s dataset is not supported' % train_config['dataset'])
 

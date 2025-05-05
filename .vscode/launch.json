@@ -12,7 +12,9 @@
             "request": "launch",
             "program": "train.py",
             "console": "integratedTerminal",
-            "args": ["--dataset", "ModelNet10"]
+            "args": ["--dataset", "ModelNet10",
+            "--image_fusion_strategy", "second_condition",
+            "--debug"]
         }
     ]
 }

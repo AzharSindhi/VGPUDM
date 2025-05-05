@@ -52,13 +52,22 @@ class ModelNet10(data.Dataset):
             augmentation=False,
             return_augmentation_params=False,
             R=4,
+            debug=False,
     ):
         self.return_augmentation_params = return_augmentation_params
         self.class_names = ['bathtub', 'bed', 'chair', 'desk', 'dresser', 'monitor', 'night_stand', 'sofa', 'table', 'toilet']
-        if train:
-            self.input_data,self.gt_data,self.class_indices = self.load_custom_h5(os.path.join(data_dir,"ModelNet10_train_1024_256.h5"))
+        if debug:
+            self.input_data,self.gt_data,self.class_indices,self.obj_path = self.load_custom_h5(os.path.join(data_dir,"ModelNet10_test_1024_256.h5"))
+            total_samples = 20
+            self.input_data = self.input_data[:total_samples]
+            self.gt_data = self.gt_data[:total_samples]
+            self.class_indices = self.class_indices[:total_samples]
+            self.obj_path = self.obj_path[:total_samples]
+            
+        elif train:
+            self.input_data,self.gt_data,self.class_indices,self.obj_path = self.load_custom_h5(os.path.join(data_dir,"ModelNet10_train_1024_256.h5"))
         else:
-            self.input_data,self.gt_data,self.class_indices = self.load_custom_h5(os.path.join(data_dir,"ModelNet10_test_1024_256.h5"))
+            self.input_data,self.gt_data,self.class_indices,self.obj_path = self.load_custom_h5(os.path.join(data_dir,"ModelNet10_test_1024_256.h5"))
 
         # # ---- condition ----
         # plys = glob.glob(os.path.join(self.input_path, "*.xyz"))
@@ -108,6 +117,7 @@ class ModelNet10(data.Dataset):
             input = np.array(f['data_sparse'][:])
             gt = np.array(f['data_dense'][:])
             class_indices = np.array(f["class_idx"][:])
+            obj_path = f["obj_path"][:]
         # the center point of input
         input_centroid = np.mean(input, axis=1, keepdims=True)
         input = input - input_centroid
@@ -118,7 +128,7 @@ class ModelNet10(data.Dataset):
         gt = gt - input_centroid
         gt = gt / np.expand_dims(input_furthest_distance, axis=-1)
 
-        return input, gt, class_indices
+        return input, gt, class_indices, obj_path
         
     def __len__(self):
         return self.len
@@ -158,7 +168,7 @@ class ModelNet10(data.Dataset):
         result['class_index'] = self.class_indices[index]
 
         if(not self.train):
-            result['name'] = str(index)
+            result['name'] = self.obj_path[index]
 
         return result
 
@@ -172,13 +182,22 @@ class PU1K(data.Dataset):
             augmentation=False,
             return_augmentation_params=False,
             R=8,
+            debug=False,
     ):
         self.return_augmentation_params = return_augmentation_params
-        if train:
+
+        if debug:
+            self.input_data,self.gt_data = load_h5_data(os.path.join(data_dir,"train","pu1k_poisson_256_poisson_1024_pc_2500_patch50_addpugan.h5"))
+            total_samples = 20
+            self.input_data = self.input_data[:total_samples]
+            self.gt_data = self.gt_data[:total_samples]
+
+        elif train:
             self.input_data,self.gt_data = load_h5_data(os.path.join(data_dir,"train","pu1k_poisson_256_poisson_1024_pc_2500_patch50_addpugan.h5"))
         else:
-            self.input_path = f"{data_dir}/test/input_{npoints}_{R}X/input_{npoints}"
-            self.gt_path = f"{data_dir}/test/input_{npoints}_{R}X/gt_{npoints*R}"
+            # self.input_path = f"{data_dir}/test/input_{npoints}_{R}X/input_{npoints}"
+            # self.gt_path = f"{data_dir}/test/input_{npoints}_{R}X/gt_{npoints*R}"
+            self.input_data,self.gt_data = load_h5_data(os.path.join(data_dir,"train","pu1k_poisson_256_poisson_1024_pc_2500_patch50_addpugan.h5"))
 
             # ---- condition ----
             plys = glob.glob(os.path.join(self.input_path, "*.xyz"))
@@ -232,9 +251,8 @@ class PU1K(data.Dataset):
         result = {}
         result['partial'] = copy.deepcopy(self.input_data[index])
         result['complete'] = copy.deepcopy(self.gt_data[index])
-        width, height, c = 100, 100, 3
-        result['image'] = np.zeros((height, width, c), dtype=np.float32)
-        
+        result['label'] = self.labels[index]
+        result['class_index'] = self.labels[index]
         # augment the point clouds
         if (isinstance(self.augmentation, dict) and self.train):
             result_list = list(result.values())
@@ -258,7 +276,6 @@ class PU1K(data.Dataset):
                 result[key] = augmentation_params[key]
         for key in result.keys():
             result[key] = torch.from_numpy(result[key])
-        result['label'] = self.labels[index]
         if(not self.train):
             result['name'] = copy.deepcopy(self.plys[index])
 
@@ -274,13 +291,22 @@ class PUGAN(data.Dataset):
             augmentation=False,
             return_augmentation_params=False,
             R=8,
+            debug=False,
     ):
         self.return_augmentation_params = return_augmentation_params
-        if train:
+        if debug:
+            self.input_data,self.gt_data = load_h5_data(os.path.join(data_dir,"train","PUGAN_poisson_256_poisson_1024.h5"))
+            total_samples = 24
+            self.input_data = self.input_data[:total_samples]
+            self.gt_data = self.gt_data[:total_samples]
+            self.plys = [str(i) for i in range(total_samples)]
+
+        elif train:
             self.input_data,self.gt_data = load_h5_data(os.path.join(data_dir,"train","PUGAN_poisson_256_poisson_1024.h5"))
         else:
-            self.input_path = f"{data_dir}/test/input_{npoints}_{R}X/input_{npoints}"
-            self.gt_path = f"{data_dir}/test/input_{npoints}_{R}X/gt_{npoints*R}"
+            # self.input_path = f"{data_dir}/test/input_{npoints}_{R}X/input_{npoints}"
+            # self.gt_path = f"{data_dir}/test/input_{npoints}_{R}X/gt_{npoints*R}"
+            self.input_data,self.gt_data = load_h5_data(os.path.join(data_dir,"train","PUGAN_poisson_256_poisson_1024.h5"))
 
             # ---- condition ----
             plys = glob.glob(os.path.join(self.input_path, "*.xyz"))
@@ -334,9 +360,8 @@ class PUGAN(data.Dataset):
         result = {}
         result['partial'] = copy.deepcopy(self.input_data[index])
         result['complete'] = copy.deepcopy(self.gt_data[index])
-        height, width, c = 100, 100, 3
-        result['image'] = np.zeros((height, width, c), dtype=np.float32)
-
+        result['class_index'] = np.array(0)
+        result['label'] = np.array(self.labels[index])
         # augment the point clouds
         if (isinstance(self.augmentation, dict) and self.train):
             result_list = list(result.values())
@@ -360,7 +385,6 @@ class PUGAN(data.Dataset):
                 result[key] = augmentation_params[key]
         for key in result.keys():
             result[key] = torch.from_numpy(result[key])
-        result['label'] = self.labels[index]
         if(not self.train):
             result['name'] = copy.deepcopy(self.plys[index])
 

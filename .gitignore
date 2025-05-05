@@ -11,3 +11,10 @@ logs/
 *.png
 *.out
 *.mat
+runs/
+*.xyz
+saved_runs/
+*.pt
+*.pth
+pkls/
+*.pkl

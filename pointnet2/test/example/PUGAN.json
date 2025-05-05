@@ -77,25 +77,21 @@
             "decoder_mlp_depth": 2,
             "decoder_radius": "[0.1, 0.2, 0.4, 0.8, 1.6]",
             "decoder_nsample": "[32, 32, 32, 32, 32]"
-        },
-        "clip_processor": {
-            "model_name": "clip_processor",
-            "clip_model_name": "clip_vit_b_32",
-            "clip_model_path": "",
-            "clip_dim": 512,
-            "class_names": ["bathtub", "bed", "chair", "desk", "dresser", "monitor", "night_stand", "sofa", "table", "toilet"]
         }
     },
     "train_config": {
         "dataset": "PUGAN",
         "root_directory": "exp_pugan",
+        "output_directory": "logs/checkpoint",
+        "tensorboard_directory": "logs/tensorboard",
         "epochs_per_ckpt": 10,
+        "iters_per_logging": 50,
         "n_epochs": 2000,
         "learning_rate": 0.0002
     },
     "pugan_dataset_config": {
         "dataset": "PUGAN",
-        "data_dir": "/home/ez48awud/Documents/datasets/PUGAN/",
+        "data_dir": "/mnt/SG10T/DataSet/PUGAN",
         "npoints": 2048,
         "novel_input": false,
         "novel_input_only": false,

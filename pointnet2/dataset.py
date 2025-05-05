@@ -6,6 +6,9 @@ def get_dataloader(
         args,
         phase='train',
 ):
+    if args['debug']:
+        phase = 'test'
+        augmentation = False
 
     if phase == 'train':
         train = True
@@ -33,13 +36,15 @@ def get_dataloader(
             npoints=args['npoints'],
             augmentation=augmentation,
             return_augmentation_params=return_augmentation_params,
-            R=args["R"]
+            R=args["R"],
+            debug=args["debug"],
         )
         trainloader = torch.utils.data.DataLoader(
             dataset,
             batch_size=batch_size,
             shuffle=shuffle,
-            num_workers=args['num_workers']
+            num_workers=args['num_workers'],
+            debug=args["debug"],
         )
     elif args['dataset'] == 'PUGAN':
         dataset = PUGAN(
@@ -49,13 +54,14 @@ def get_dataloader(
             npoints=args['npoints'],
             augmentation=augmentation,
             return_augmentation_params=return_augmentation_params,
-            R=args["R"]
+            R=args["R"],
+            debug=args["debug"],
         )
         trainloader = torch.utils.data.DataLoader(
             dataset,
             batch_size=batch_size,
             shuffle=shuffle,
-            num_workers=args['num_workers']
+            num_workers=args['num_workers'],
         )
     elif args['dataset'] == 'ViPC':
         dataset = ViPCDataLoaderTest()
@@ -63,7 +69,7 @@ def get_dataloader(
             dataset,
             batch_size=batch_size,
             shuffle=shuffle,
-            num_workers=args['num_workers']
+            num_workers=args['num_workers'],
         )
     elif args['dataset'] == 'ModelNet10':
         dataset = ModelNet10(
@@ -73,7 +79,8 @@ def get_dataloader(
             npoints=args['npoints'],
             augmentation=augmentation,
             return_augmentation_params=return_augmentation_params,
-            R=args["R"]
+            R=args["R"],
+            debug=args["debug"],
         )
         trainloader = torch.utils.data.DataLoader(
             dataset,

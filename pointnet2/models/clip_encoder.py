@@ -8,7 +8,7 @@ class CLIPEncoder:
         self.device = device
         self.model, self.preprocess = clip.load("ViT-B/32", device=device)
         self.model.eval()
-        self.class_names = ["a picture of " + class_name for class_name in class_names]
+        self.category_names = ["a set of points of a " + class_name for class_name in class_names]
         # self.class_names = ["a point cloud of " + class_name for class_name in class_names]
 
     
@@ -22,7 +22,7 @@ class CLIPEncoder:
     def encode_text(self, class_index):
         processed_text = []
         for index in class_index:
-            processed_text.append(clip.tokenize(self.class_names[index]))
+            processed_text.append(clip.tokenize(self.category_names[index]))
         processed_text = torch.cat(processed_text, dim=0).to(self.device)
         with torch.no_grad():
             return self.model.encode_text(processed_text)

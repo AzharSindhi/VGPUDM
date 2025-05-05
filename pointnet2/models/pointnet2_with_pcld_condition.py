@@ -477,10 +477,18 @@ class PointNet2CloudCondition(PointNet2SemSegSSG):
         self.class_names = self.hparams["clip_processor"]["class_names"]
         self.clip_processor = CLIPEncoder(class_names=self.class_names)
         self.clip_dim = self.hparams["clip_processor"]["clip_dim"]
-        self.image_fusion_strategy = self.hparams.get('image_fusion_strategy', 'none')
+        self.image_fusion_strategy = self.hparams['image_fusion_strategy']
         assert self.image_fusion_strategy in ['none', 'input', 'condition', 'second_condition', 'latent', 'denoise'], f"Invalid image fusion strategy: {self.image_fusion_strategy}"
-        self.conditon_img_transform = nn.Linear(self.clip_dim + self.global_feature_dim, self.global_feature_dim)
-        
+        if self.image_fusion_strategy == 'condition':
+            self.conditon_img_transform = nn.Linear(self.clip_dim + self.global_feature_dim, self.global_feature_dim)
+        elif self.image_fusion_strategy == 'second_condition':
+            self.conditon_img_transform = nn.Linear(self.clip_dim + self.hparams["class_condition_dim"], self.hparams["class_condition_dim"])
+        elif self.image_fusion_strategy == 'latent':
+            cond_out_dim = 128
+            main_out_dim = 512
+            self.cond_latent_transform = nn.Linear(self.clip_dim + cond_out_dim, cond_out_dim)
+            self.main_latent_transform = nn.Linear(self.clip_dim + main_out_dim, main_out_dim)
+    
     def reset_cond_features(self):
         self.l_uvw = None
         self.encoder_cond_features = None
@@ -497,13 +505,12 @@ class PointNet2CloudCondition(PointNet2SemSegSSG):
             use_retained_condition_feature=False
     ):
 
-        image_features = None 
+        image_features = torch.zeros((pointcloud.shape[0], self.clip_dim)).cuda() 
         with torch.no_grad():
-            if class_index is not None:
+            if class_index is not None and self.image_fusion_strategy != 'none':
                 image_features = self.clip_processor.encode_text(class_index) # shape (B, 512)
-            else:
-                image_features = torch.zeros((pointcloud.shape[0], self.clip_dim)).cuda()
-                self.image_fusion_strategy = 'none' # do not incorporate image features       
+                # normalize clip features
+                image_features = image_features / torch.norm(image_features, dim=1, keepdim=True)
             
             xyz_ori = pointcloud[:,:,0:3] / self.scale_factor
             pointcloud = torch.cat([pointcloud, xyz_ori], dim=2)
@@ -555,7 +562,8 @@ class PointNet2CloudCondition(PointNet2SemSegSSG):
                 condition_emb = self.conditon_img_transform(condition_emb)
         elif self.image_fusion_strategy == "second_condition":
             if second_condition_emb is not None:
-                second_condition_emb = torch.cat([second_condition_emb, image_features], dim=1)               
+                second_condition_emb = torch.cat([second_condition_emb, image_features], dim=1)
+                second_condition_emb = self.conditon_img_transform(second_condition_emb)               
 
         
         l_uvw, l_cond_features = [uvw], [cond_features]
@@ -611,8 +619,11 @@ class PointNet2CloudCondition(PointNet2SemSegSSG):
             image_features = image_features.unsqueeze(2).expand(-1, -1, l_cond_features[-1].shape[2])
             l_cond_features[-1] = torch.cat([l_cond_features[-1], image_features], dim=1)
             l_features[-1] = torch.cat([l_features[-1], image_features], dim=1)
-        
-        # ---- Cross-Attention ----
+            # apply transformations to match the shapes
+            l_cond_features[-1] = self.cond_latent_transform(l_cond_features[-1].permute(0, 2, 1)).permute(0, 2, 1)
+            l_features[-1] = self.main_latent_transform(l_features[-1].permute(0, 2, 1)).permute(0, 2, 1)
+       
+       # ---- Cross-Attention ----
         l_cond_features[-1] = self.att_c(
             l_features[-1].permute(0, 2, 1),
             queries_encoder=l_cond_features[-1].permute(0, 2, 1)
