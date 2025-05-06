@@ -261,6 +261,7 @@ if __name__ == "__main__":
     else:
         raise Exception('%s dataset is not supported' % train_config['dataset'])
 
+    trainset_config["data_dir"] = args.data_dir
     diffusion_hyperparams = calc_diffusion_hyperparams(**diffusion_config)
     run_name = f"{args.run_name}_{args.dataset}_{args.image_fusion_strategy}"
     args.model_path = pretrained_model_path
