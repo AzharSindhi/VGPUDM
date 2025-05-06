@@ -21,7 +21,6 @@ from eval import evaluate as generate_samples
 from contextlib import redirect_stdout
 import io
 
-
 def split_data(data):
     label = data['label'].cuda()
     X = data['complete'].cuda()
@@ -225,6 +224,7 @@ if __name__ == "__main__":
     parser.add_argument('--debug', action='store_true', default=False)
     parser.add_argument('--early_stopping_patience', type=int, default=30)
     parser.add_argument('--run_name', type=str, default="")
+    parser.add_argument("--pretrained", action='store_true', default=False)
     args = parser.parse_args()
 
     args.config = f"./exp_configs/{args.dataset}.json"
@@ -259,7 +259,10 @@ if __name__ == "__main__":
 
     diffusion_hyperparams = calc_diffusion_hyperparams(**diffusion_config)
     run_name = f"{args.run_name}_{args.dataset}_{args.image_fusion_strategy}"
-    args.model_path = pretrained_model_path
+    trainset_config["data_dir"] = os.path.expanduser(trainset_config["data_dir"])
+
+    if args.pretrained:
+        args.model_path = pretrained_model_path
     if args.debug:
         run_name += "_debug"
     train(
