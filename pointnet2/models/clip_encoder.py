@@ -8,8 +8,7 @@ class CLIPEncoder:
         self.device = device
         self.model, self.preprocess = clip.load("ViT-B/32", device=device)
         self.model.eval()
-        self.category_names = ["a set of points of a " + class_name for class_name in class_names]
-        # self.class_names = ["a point cloud of " + class_name for class_name in class_names]
+        self.category_names = ["an image of a " + class_name for class_name in class_names]
 
     
     def encode_image(self, batch_images):

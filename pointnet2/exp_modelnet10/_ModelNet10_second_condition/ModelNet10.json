@@ -90,7 +90,7 @@
         "dataset": "ModelNet10",
         "root_directory": "exp_modelnet10",
         "epochs_per_ckpt": 10,
-        "n_epochs": 100,
+        "n_epochs": 200,
         "learning_rate": 0.0001
     },
     "modelnet10_dataset_config": {

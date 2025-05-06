@@ -55,7 +55,8 @@ class ModelNet10(data.Dataset):
             debug=False,
     ):
         self.return_augmentation_params = return_augmentation_params
-        self.class_names = ['bathtub', 'bed', 'chair', 'desk', 'dresser', 'monitor', 'night_stand', 'sofa', 'table', 'toilet']
+        self.class_names = ['bathtub', 'bed', 'chair', 'desk', 'dresser', 
+                            'monitor', 'night_stand', 'sofa', 'table', 'toilet']
         if debug:
             self.input_data,self.gt_data,self.class_indices,self.obj_path = self.load_custom_h5(os.path.join(data_dir,"ModelNet10_test_1024_256.h5"))
             total_samples = 20
