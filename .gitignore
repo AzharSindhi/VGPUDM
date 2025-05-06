@@ -1,39 +1,10 @@
-venv/
-build/
-dist/
-__pycache__
-*.egg-info
-*.egg
-logs/
-.ipynb_checkpoints
-*.ipynb
-*.jpg
-*.png
-*.out
-*.mat
-runs/
-*.xyz
-saved_runs/
-*.pt
-*.pth
-pkls/
-*.pkl
-*.bz2
-exp_*/
-!exp_configs/
-lookup_info.txt
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
-*.cp
-*.cu
+
 # C extensions
 *.so
-*.h
-*.c
-*.cpp
-*.cu
 
 # Distribution / packaging
 .Python
@@ -201,3 +172,12 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+exp_*/
+!exp_configs
+runs/
+test/
+_ext*/
+saved_runs/
+camera_position.mat
+*.pkl
