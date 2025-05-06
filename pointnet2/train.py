@@ -225,11 +225,7 @@ if __name__ == "__main__":
     parser.add_argument('--debug', action='store_true', default=False)
     parser.add_argument('--early_stopping_patience', type=int, default=30)
     parser.add_argument('--run_name', type=str, default="")
-    parser.add_argument('--data_dir', type=str, required=True)
     args = parser.parse_args()
-
-    if not os.path.exists(args.data_dir):
-        raise Exception("Data directory does not exist. Please provide a valid data directory.")
 
     args.config = f"./exp_configs/{args.dataset}.json"
     with open(args.config) as f:
@@ -261,7 +257,6 @@ if __name__ == "__main__":
     else:
         raise Exception('%s dataset is not supported' % train_config['dataset'])
 
-    trainset_config["data_dir"] = args.data_dir
     diffusion_hyperparams = calc_diffusion_hyperparams(**diffusion_config)
     run_name = f"{args.run_name}_{args.dataset}_{args.image_fusion_strategy}"
     args.model_path = pretrained_model_path
