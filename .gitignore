@@ -29,6 +29,10 @@ __pycache__/
 *.cu
 # C extensions
 *.so
+*.h
+*.c
+*.cpp
+*.cu
 
 # Distribution / packaging
 .Python
