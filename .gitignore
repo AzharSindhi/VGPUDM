@@ -21,6 +21,7 @@ pkls/
 *.bz2
 exp_*/
 !exp_configs/
+lookup_info.txt
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
