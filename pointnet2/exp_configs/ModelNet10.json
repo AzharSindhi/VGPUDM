@@ -95,7 +95,7 @@
     },
     "modelnet10_dataset_config": {
         "dataset": "ModelNet10",
-        "data_dir": "/home/ez48awud/Documents/datasets/ModelNet10/",
+        "data_dir": "~/Documents/datasets/ModelNet10/",
         "class_names": ["bathtub", "bed", "chair", "desk", "dresser", "monitor", "night_stand", "sofa", "table", "toilet"],
         "npoints": 256,
         "novel_input": false,
