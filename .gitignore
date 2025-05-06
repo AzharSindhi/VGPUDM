@@ -21,6 +21,8 @@ pkls/
 *.bz2
 exp_*/
 !exp_configs/
+!chamfer_cuda.cpp
+!chamfer3D.cu
 lookup_info.txt
 # Byte-compiled / optimized / DLL files
 __pycache__/
