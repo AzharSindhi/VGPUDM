@@ -306,7 +306,7 @@ class PointNet2CloudCondition(PointNet2SemSegSSG):
         # ---- t_emb ----
 
         self.map_type = self.hparams['map_type']
-
+        self.condition_net_arch_outpoints = self.hparams['condition_net_architecture']['npoint'][-1]
         if self.include_local_feature:
             # build SA module for condition point cloud
             condition_arch = self.hparams['condition_net_architecture']
@@ -478,16 +478,18 @@ class PointNet2CloudCondition(PointNet2SemSegSSG):
         self.clip_processor = CLIPEncoder(class_names=self.class_names)
         self.clip_dim = self.hparams["clip_processor"]["clip_dim"]
         self.image_fusion_strategy = self.hparams['image_fusion_strategy']
-        assert self.image_fusion_strategy in ['none', 'input', 'condition', 'second_condition', 'latent', 'denoise'], f"Invalid image fusion strategy: {self.image_fusion_strategy}"
+        self.condition_net_arch_outpoints = self.hparams['condition_net_architecture']['npoint'][-1]
+        self.condition_net_arch_outdim = self.hparams['condition_net_architecture']['feature_dim'][-1]
+
         if self.image_fusion_strategy == 'condition':
             self.conditon_img_transform = nn.Linear(self.clip_dim + self.global_feature_dim, self.global_feature_dim)
         elif self.image_fusion_strategy == 'second_condition':
             self.conditon_img_transform = nn.Linear(self.clip_dim + self.hparams["class_condition_dim"], self.hparams["class_condition_dim"])
         elif self.image_fusion_strategy == 'latent':
-            cond_out_dim = 128
-            main_out_dim = 512
-            self.cond_latent_transform = nn.Linear(self.clip_dim + cond_out_dim, cond_out_dim)
-            self.main_latent_transform = nn.Linear(self.clip_dim + main_out_dim, main_out_dim)
+            self.cond_latent_transform = nn.Linear(self.clip_dim + self.condition_net_arch_outdim, self.condition_net_arch_outdim)
+            self.main_latent_transform = nn.Linear(self.clip_dim + feature_dim[-1], feature_dim[-1])
+        elif self.image_fusion_strategy == 'only_clip':
+            self.cond_latent_transform = nn.Linear(self.clip_dim, self.condition_net_arch_outdim)
     
     def reset_cond_features(self):
         self.l_uvw = None
@@ -566,6 +568,10 @@ class PointNet2CloudCondition(PointNet2SemSegSSG):
                 second_condition_emb = self.conditon_img_transform(second_condition_emb)               
 
         
+        # remove the condition branch and features based on argument
+        # condition on latent vector
+        # think of better approach for pointwise features from clip
+
         l_uvw, l_cond_features = [uvw], [cond_features]
         l_xyz, l_features = [xyz], [features]
         for i in range(len(self.SA_modules)):
@@ -618,21 +624,25 @@ class PointNet2CloudCondition(PointNet2SemSegSSG):
             # expand image_features to (B, 512, N)
             image_features = image_features.unsqueeze(2).expand(-1, -1, l_cond_features[-1].shape[2])
             l_cond_features[-1] = torch.cat([l_cond_features[-1], image_features], dim=1)
-            l_features[-1] = torch.cat([l_features[-1], image_features], dim=1)
+            # l_features[-1] = torch.cat([l_features[-1], image_features], dim=1)
             # apply transformations to match the shapes
             l_cond_features[-1] = self.cond_latent_transform(l_cond_features[-1].permute(0, 2, 1)).permute(0, 2, 1)
-            l_features[-1] = self.main_latent_transform(l_features[-1].permute(0, 2, 1)).permute(0, 2, 1)
-       
-       # ---- Cross-Attention ----
-        l_cond_features[-1] = self.att_c(
-            l_features[-1].permute(0, 2, 1),
-            queries_encoder=l_cond_features[-1].permute(0, 2, 1)
-        ).permute(0, 2, 1).contiguous()
+            # l_features[-1] = self.main_latent_transform(l_features[-1].permute(0, 2, 1)).permute(0, 2, 1)
+        elif self.image_fusion_strategy == 'only_clip':
+            cond_features = image_features.unsqueeze(2).expand(-1, -1, self.condition_net_arch_outpoints).to(l_features[-1].dtype)
+            l_cond_features[-1] = self.cond_latent_transform(cond_features.permute(0, 2, 1)).permute(0, 2, 1)
 
-        l_features[-1] = self.att_noise(
-            l_cond_features[-1].permute(0, 2, 1),
-            queries_encoder=l_features[-1].permute(0, 2, 1)
-        ).permute(0, 2, 1).contiguous()
+        if len(l_cond_features) > 1:           
+            # ---- Cross-Attention ----
+            l_cond_features[-1] = self.att_c(
+                l_features[-1].permute(0, 2, 1),
+                queries_encoder=l_cond_features[-1].permute(0, 2, 1)
+            ).permute(0, 2, 1).contiguous()
+
+            l_features[-1] = self.att_noise(
+                l_cond_features[-1].permute(0, 2, 1),
+                queries_encoder=l_features[-1].permute(0, 2, 1)
+            ).permute(0, 2, 1).contiguous()
 
         if self.include_local_feature:
             if use_retained_condition_feature and self.l_uvw is None:

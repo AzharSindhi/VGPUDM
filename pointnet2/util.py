@@ -470,6 +470,7 @@ def sampling_ddim(
     ts = torch.cat([ts1, ts2], dim=0)
     steps = reversed(range(len(ts)))
     i = get_interpolate(condition,R)
+    condition_pre = None
     with torch.no_grad():
         for step,t in zip(steps,ts): # t from T-1 to 0
             if (step + 1) % print_every_n_steps == 0 or step == 0:
