@@ -177,7 +177,7 @@ def train(config_file, model_path, dataset, root_directory, run_name, n_epochs, 
                 console.print("[red]Early stopping triggered. Training stopped.[/red]")
                 break
         
-        
+        console.print("[yellow]Calculating evaluation metrics...[/yellow]")
         # load the best checkpoint
         checkpoint = torch.load(os.path.join(output_directory, 'best_checkpoint.pt'))
         net.load_state_dict(checkpoint['model_state_dict'])
@@ -266,6 +266,7 @@ if __name__ == "__main__":
 
     if args.model_path != "":
         assert os.path.exists(args.model_path), f"Pretrained model path {args.model_path} does not exist"
+        run_name += "_pretrained" + os.path.basename(args.model_path).split(".")[0]
     if args.debug:
         run_name += "_debug"
     train(
