@@ -20,6 +20,7 @@ sys.path.append(os.path.abspath("../"))
 from eval import evaluate as generate_samples
 from contextlib import redirect_stdout
 import io
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 def split_data(data):
     label = data['label'].cuda()
@@ -78,24 +79,26 @@ def train(config_file, model_path, dataset, root_directory, run_name, n_epochs, 
     testloader = get_dataloader(trainset_config, phase='test')
     pointnet_config['image_fusion_strategy'] = args.image_fusion_strategy
     net = PointNet2CloudCondition(pointnet_config).cuda()
-    optimizer = torch.optim.Adam(net.parameters(), lr=learning_rate)
     start_epoch = 0
     best_test_loss = float('inf')
     early_stopping_counter = 0
     cd_meter_avg = float('inf')
     hd_meter_avg = float('inf')
 
-    if os.path.exists(model_path):
-        try:
-            checkpoint = torch.load(model_path, map_location='cpu')
-            net.load_state_dict(checkpoint['model_state_dict'])
-            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-            start_epoch = checkpoint.get('epoch', 0)
-            n_epochs = start_epoch + n_epochs
-            best_test_loss = checkpoint.get('best_test_loss', float('inf'))
-            print(f'Loaded checkpoint from {model_path}, resuming from epoch {start_epoch}', flush=True)
-        except Exception as e:
-            print(f"Error loading checkpoint: {e}. Starting from scratch.", flush=True)
+    if model_path != "":
+        # ignore missing keys while loading checkpoints
+        checkpoint = torch.load(model_path, map_location='cpu')
+        state_dict = checkpoint['model_state_dict']
+        filtered_state_dict = {k: v for k, v in state_dict.items() if k in net.state_dict()}
+        net.load_state_dict(filtered_state_dict, strict=False)
+        # optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        # start_epoch = checkpoint.get('epoch', 0)
+        # n_epochs = start_epoch + n_epochs
+        # best_test_loss = checkpoint.get('best_test_loss', float('inf'))
+        print(f'Loaded checkpoint from {model_path}', flush=True)
+
+    optimizer = torch.optim.Adam(net.parameters(), lr=learning_rate)
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5, verbose=True)
 
     console = Console()
     console.print(f"[bold yellow]Training for {n_epochs} epochs...[/bold yellow]")
@@ -118,6 +121,7 @@ def train(config_file, model_path, dataset, root_directory, run_name, n_epochs, 
             test_task = progress.add_task("[Eval]", total=len(testloader))
             test_loss = evaluate(net, testloader, diffusion_hyperparams, progress, test_task)
 
+            scheduler.step(test_loss)
             epoch_duration = time.time() - epoch_start_time
 
             checkpoint = {
@@ -130,7 +134,7 @@ def train(config_file, model_path, dataset, root_directory, run_name, n_epochs, 
             if test_loss < best_test_loss:
                 best_test_loss = test_loss
                 early_stopping_counter = 0
-                torch.save(checkpoint, os.path.join(output_directory, 'best_checkpoint.pt'))
+                # torch.save(checkpoint, os.path.join(output_directory, 'best_checkpoint.pt'))
                 # with redirect_stdout(io.StringIO()):    
                 #     cd_meter_avg, hd_meter_avg, p2f_meter_avg, total_meta, _ = generate_samples(
                 #         net,
@@ -173,7 +177,7 @@ def train(config_file, model_path, dataset, root_directory, run_name, n_epochs, 
                 console.print("[red]Early stopping triggered. Training stopped.[/red]")
                 break
         
-        
+        console.print("[yellow]Calculating evaluation metrics...[/yellow]")
         # load the best checkpoint
         checkpoint = torch.load(os.path.join(output_directory, 'best_checkpoint.pt'))
         net.load_state_dict(checkpoint['model_state_dict'])
@@ -213,7 +217,6 @@ def train(config_file, model_path, dataset, root_directory, run_name, n_epochs, 
 
 if __name__ == "__main__":
     set_seed(42)
-    pretrained_model_path = ""
 
     parser = argparse.ArgumentParser()
     parser.add_argument('-d', '--dataset', type=str, required=True)
@@ -222,9 +225,8 @@ if __name__ == "__main__":
     parser.add_argument('-m', '--model_path', type=str, default="")
     parser.add_argument('-i', '--image_fusion_strategy', type=str, required=True)
     parser.add_argument('--debug', action='store_true', default=False)
-    parser.add_argument('--early_stopping_patience', type=int, default=30)
+    parser.add_argument('--early_stopping_patience', type=int, default=10)
     parser.add_argument('--run_name', type=str, default="")
-    parser.add_argument("--pretrained", action='store_true', default=False)
     args = parser.parse_args()
 
     args.config = f"./exp_configs/{args.dataset}.json"
@@ -260,9 +262,11 @@ if __name__ == "__main__":
     diffusion_hyperparams = calc_diffusion_hyperparams(**diffusion_config)
     run_name = f"{args.run_name}_{args.dataset}_{args.image_fusion_strategy}"
     trainset_config["data_dir"] = os.path.expanduser(trainset_config["data_dir"])
+    assert args.image_fusion_strategy in ['none', 'input', 'condition', 'second_condition', 'latent', 'only_clip'], f"Invalid image fusion strategy: {args.image_fusion_strategy}"
 
-    if args.pretrained:
-        args.model_path = pretrained_model_path
+    if args.model_path != "":
+        assert os.path.exists(args.model_path), f"Pretrained model path {args.model_path} does not exist"
+        run_name += "_pretrained" + os.path.basename(args.model_path).split(".")[0]
     if args.debug:
         run_name += "_debug"
     train(
