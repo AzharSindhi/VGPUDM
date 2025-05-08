@@ -181,3 +181,4 @@ _ext*/
 saved_runs/
 camera_position.mat
 *.pkl
+pytorch3d-0.6.1-py37_cu111_pyt191.tar.bz2
