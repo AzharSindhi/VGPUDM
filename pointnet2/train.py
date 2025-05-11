@@ -98,7 +98,7 @@ def train(config_file, model_path, dataset, root_directory, run_name, n_epochs, 
         print(f'Loaded checkpoint from {model_path}', flush=True)
 
     optimizer = torch.optim.Adam(net.parameters(), lr=learning_rate)
-    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5, verbose=True)
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=10, verbose=True)
 
     console = Console()
     console.print(f"[bold yellow]Training for {n_epochs} epochs...[/bold yellow]")
@@ -134,7 +134,7 @@ def train(config_file, model_path, dataset, root_directory, run_name, n_epochs, 
             if test_loss < best_test_loss:
                 best_test_loss = test_loss
                 early_stopping_counter = 0
-                # torch.save(checkpoint, os.path.join(output_directory, 'best_checkpoint.pt'))
+                torch.save(checkpoint, os.path.join(output_directory, 'best_checkpoint.pt'))
                 # with redirect_stdout(io.StringIO()):    
                 #     cd_meter_avg, hd_meter_avg, p2f_meter_avg, total_meta, _ = generate_samples(
                 #         net,
@@ -225,7 +225,7 @@ if __name__ == "__main__":
     parser.add_argument('-m', '--model_path', type=str, default="")
     parser.add_argument('-i', '--image_fusion_strategy', type=str, required=True)
     parser.add_argument('--debug', action='store_true', default=False)
-    parser.add_argument('--early_stopping_patience', type=int, default=10)
+    parser.add_argument('--early_stopping_patience', type=int, default=20)
     parser.add_argument('--run_name', type=str, default="")
     args = parser.parse_args()
 

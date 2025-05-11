@@ -558,7 +558,11 @@ def training_loss(
     z = std_normal(x0.shape)
     # xt = sqrt(at_) * X0 + sqrt(1-at_) * z ==> q(xt|x0)
     xt = torch.sqrt(Alpha_bar[diffusion_steps]) * x0 + torch.sqrt(1 - Alpha_bar[diffusion_steps]) * z
-    i = midpoint_interpolate(condition.permute(0, 2, 1)).permute(0, 2, 1)
+    if xt.shape[1] == condition.shape[1]: # for ViPC
+        i = xt
+    else:
+        i = midpoint_interpolate(condition.permute(0, 2, 1)).permute(0, 2, 1)
+    
     xt = torch.cat([xt, i], dim=-1)
     epsilon_theta = net(
         xt,

@@ -19,6 +19,9 @@ class CLIPEncoder:
             return self.model.encode_image(batch_images)
     
     def encode_text(self, class_index):
+        if class_index.ndim > 1:
+            return self.encode_image(class_index)
+           
         processed_text = []
         for index in class_index:
             processed_text.append(clip.tokenize(self.category_names[index]))

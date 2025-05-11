@@ -11,37 +11,6 @@ import math
 from tqdm import tqdm
 
 
-def collate_fn(batch):
-    batch = list(filter(lambda x: x is not None, batch))
-    return torch.utils.data.dataloader.default_collate(batch)
-
-
-def rotation_z(pts, theta):
-    cos_theta = np.cos(theta)
-    sin_theta = np.sin(theta)
-    rotation_matrix = np.array([[cos_theta, -sin_theta, 0.0],
-                                [sin_theta, cos_theta, 0.0],
-                                [0.0, 0.0, 1.0]])
-    return pts @ rotation_matrix.T
-
-
-def rotation_y(pts, theta):
-    cos_theta = np.cos(theta)
-    sin_theta = np.sin(theta)
-    rotation_matrix = np.array([[cos_theta, 0.0, -sin_theta],
-                                [0.0, 1.0, 0.0],
-                                [sin_theta, 0.0, cos_theta]])
-    return pts @ rotation_matrix.T
-
-
-def rotation_x(pts, theta):
-    cos_theta = np.cos(theta)
-    sin_theta = np.sin(theta)
-    rotation_matrix = np.array([[1.0, 0.0, 0.0],
-                                [0.0, cos_theta, -sin_theta],
-                                [0.0, sin_theta, cos_theta]])
-    return pts @ rotation_matrix.T
-
 
 class ViPCDataLoaderTest(Dataset):
     def __init__(self) -> None:
@@ -109,6 +78,33 @@ class ViPCDataLoader(Dataset):
 
         print(f'{status} data num: {len(self.key)}')
 
+
+    def rotation_z(self, pts, theta):
+        cos_theta = np.cos(theta)
+        sin_theta = np.sin(theta)
+        rotation_matrix = np.array([[cos_theta, -sin_theta, 0.0],
+                                    [sin_theta, cos_theta, 0.0],
+                                    [0.0, 0.0, 1.0]])
+        return pts @ rotation_matrix.T
+
+
+    def rotation_y(self, pts, theta):
+        cos_theta = np.cos(theta)
+        sin_theta = np.sin(theta)
+        rotation_matrix = np.array([[cos_theta, 0.0, -sin_theta],
+                                    [0.0, 1.0, 0.0],
+                                    [sin_theta, 0.0, cos_theta]])
+        return pts @ rotation_matrix.T
+
+
+    def rotation_x(self, pts, theta):
+        cos_theta = np.cos(theta)
+        sin_theta = np.sin(theta)
+        rotation_matrix = np.array([[1.0, 0.0, 0.0],
+                                    [0.0, cos_theta, -sin_theta],
+                                    [0.0, sin_theta, cos_theta]])
+        return pts @ rotation_matrix.T
+
     def __getitem__(self, idx):
 
         
@@ -160,8 +156,8 @@ class ViPCDataLoader(Dataset):
         theta_img = math.radians(view_metadata[int(image_view_id),0])
         phi_img = math.radians(view_metadata[int(image_view_id),1])
 
-        pc_part = rotation_y(rotation_x(pc_part, - phi_part),np.pi + theta_part)
-        pc_part = rotation_x(rotation_y(pc_part, np.pi - theta_img), phi_img)
+        pc_part = self.rotation_y(self.rotation_x(pc_part, - phi_part),np.pi + theta_part)
+        pc_part = self.rotation_x(self.rotation_y(pc_part, np.pi - theta_img), phi_img)
 
         # normalize partial point cloud and GT to the same scale
         gt_mean = pc.mean(axis=0) 
@@ -181,7 +177,8 @@ class ViPCDataLoader(Dataset):
 if __name__ == "__main__":
     from torch.utils.data import DataLoader
     category = "table"
-    ViPCDataset = ViPCDataLoader('test_list2.txt',data_path='/home/aiello/ShapeNetViPC-Dataset',status='test', category = category)
+    status = "train"
+    ViPCDataset = ViPCDataLoader(f'{status}_list_mini_{category}.txt',data_path='/home/woody/iwnt/iwnt150h/datasets/ShapeNetViPC-Dataset',status=status, category = category)
     train_loader = DataLoader(ViPCDataset,
                               batch_size=1,
                               num_workers=1,

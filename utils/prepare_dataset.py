@@ -108,7 +108,38 @@ def get_data_triplets(data_loader):
     
     return data_dense, data_sparse, class_idx
 
-if __name__ == '__main__':
+
+def prepare_ViPC_mini_dataset(category, file_list_path, outpath, num_samples=2000):
+    cat_map = {
+        'plane':'02691156',
+        'bench': '02828884', 
+        'cabinet':'02933112', 
+        'car':'02958343',
+        'chair':'03001627',
+        'monitor': '03211117',
+        'lamp':'03636649',
+        'speaker': '03691459', 
+        'firearm': '04090263', 
+        'couch':'04256520',
+        'table':'04379243',
+        'cellphone': '04401088', 
+        'watercraft':'04530566'
+    }
+    
+    cat_id = cat_map[category]
+    with open(file_list_path,'r') as f:
+        lines = f.readlines()
+    
+    filtered_lines = [line for line in lines if line.split('/')[0] == cat_id]
+    # randomly sample num_samples lines
+    sampled_lines = random.sample(filtered_lines, num_samples)
+    
+    with open(outpath,'w') as f:
+        f.writelines(sampled_lines) 
+
+
+def prepare_modenet():
+
     dense_tra = transforms.Compose([
     Select_Points(1024),
     # Normalize(),
@@ -175,4 +206,13 @@ if __name__ == '__main__':
         plt.show()
     
 
+
+if __name__ == '__main__':
+
+    category="table"
+    train_file_path = "train_list.txt"
+    test_file_path = "test_list.txt"
+    
+    prepare_ViPC_mini_dataset(category, train_file_path, f"train_list_mini_{category}.txt", num_samples=2000)
+    prepare_ViPC_mini_dataset(category, test_file_path, f"test_list_mini_{category}.txt", num_samples=1000)
     
