@@ -78,6 +78,7 @@ def train(config_file, model_path, dataset, root_directory, run_name, n_epochs, 
     trainloader = get_dataloader(trainset_config)
     testloader = get_dataloader(trainset_config, phase='test')
     pointnet_config['image_fusion_strategy'] = args.image_fusion_strategy
+    pointnet_config['image_backbone'] = args.image_backbone
     net = PointNet2CloudCondition(pointnet_config).cuda()
     start_epoch = 0
     best_test_loss = float('inf')
@@ -227,6 +228,7 @@ if __name__ == "__main__":
     parser.add_argument('--debug', action='store_true', default=False)
     parser.add_argument('--early_stopping_patience', type=int, default=20)
     parser.add_argument('--run_name', type=str, default="")
+    parser.add_argument('--image_backbone', type=str)
     args = parser.parse_args()
 
     args.config = f"./exp_configs/{args.dataset}.json"
@@ -260,13 +262,13 @@ if __name__ == "__main__":
         raise Exception('%s dataset is not supported' % train_config['dataset'])
 
     diffusion_hyperparams = calc_diffusion_hyperparams(**diffusion_config)
-    run_name = f"{args.run_name}_{args.dataset}_{args.image_fusion_strategy}"
+    run_name = f"{args.image_backbone}_{args.dataset}_{args.image_fusion_strategy}"
     trainset_config["data_dir"] = os.path.expanduser(trainset_config["data_dir"])
     assert args.image_fusion_strategy in ['none', 'input', 'condition', 'second_condition', 'latent', 'only_clip'], f"Invalid image fusion strategy: {args.image_fusion_strategy}"
-
+    assert args.image_backbone in ['clip', 'dino', 'none'], f"Invalid image backbone: {args.image_backbone}"
     if args.model_path != "":
         assert os.path.exists(args.model_path), f"Pretrained model path {args.model_path} does not exist"
-        run_name += "_pretrained" + os.path.basename(args.model_path).split(".")[0]
+        run_name += "_pre" + os.path.basename(args.model_path).split(".")[0]
     if args.debug:
         run_name += "_debug"
     train(

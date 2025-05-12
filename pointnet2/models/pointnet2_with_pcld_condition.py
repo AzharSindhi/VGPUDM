@@ -9,6 +9,7 @@ from torch.utils.data import DataLoader
 from pointnet2.models.pointnet2_ssg_sem import PointNet2SemSegSSG, calc_t_emb, swish
 # from pointnet2_ssg_sem import PointNet2SemSegSSG, calc_t_emb, swish
 from models.clip_encoder import CLIPEncoder
+from models.dino_encoder import DinoEncoder
 from pointnet2.models.pnet import Pnet2Stage
 from pointnet2.models.model_utils import get_embedder
 
@@ -473,23 +474,34 @@ class PointNet2CloudCondition(PointNet2SemSegSSG):
                 nn.Conv1d(128, self.hparams['out_dim'], kernel_size=1),
             )
 
-        # Initialize CLIP processor
-        self.class_names = self.hparams["clip_processor"]["class_names"]
-        self.clip_processor = CLIPEncoder(class_names=self.class_names)
-        self.clip_dim = self.hparams["clip_processor"]["clip_dim"]
         self.image_fusion_strategy = self.hparams['image_fusion_strategy']
+
+        # Initialize Image processor
+        image_backbone = self.hparams["image_backbone"]
+        self.class_names = self.hparams["clip_processor"]["class_names"]
+        if image_backbone == "none" or self.image_fusion_strategy == "none":
+            self.image_processor = None
+            self.image_out_dim = 0
+        elif image_backbone == "clip":
+            self.image_processor = CLIPEncoder(class_names=self.class_names)
+            self.image_out_dim = self.image_processor.out_dim
+        elif image_backbone == "dino":
+            self.image_processor = DinoEncoder()
+            self.image_out_dim = self.image_processor.out_dim
+
+
         self.condition_net_arch_outpoints = self.hparams['condition_net_architecture']['npoint'][-1]
         self.condition_net_arch_outdim = self.hparams['condition_net_architecture']['feature_dim'][-1]
 
         if self.image_fusion_strategy == 'condition':
-            self.conditon_img_transform = nn.Linear(self.clip_dim + self.global_feature_dim, self.global_feature_dim)
+            self.conditon_img_transform = nn.Linear(self.image_out_dim + self.global_feature_dim, self.global_feature_dim)
         elif self.image_fusion_strategy == 'second_condition':
-            self.conditon_img_transform = nn.Linear(self.clip_dim + self.hparams["class_condition_dim"], self.hparams["class_condition_dim"])
+            self.conditon_img_transform = nn.Linear(self.image_out_dim + self.hparams["class_condition_dim"], self.hparams["class_condition_dim"])
         elif self.image_fusion_strategy == 'latent':
-            self.cond_latent_transform = nn.Linear(self.clip_dim + self.condition_net_arch_outdim, self.condition_net_arch_outdim)
-            self.main_latent_transform = nn.Linear(self.clip_dim + feature_dim[-1], feature_dim[-1])
+            self.cond_latent_transform = nn.Linear(self.image_out_dim + self.condition_net_arch_outdim, self.condition_net_arch_outdim)
+            self.main_latent_transform = nn.Linear(self.image_out_dim + feature_dim[-1], feature_dim[-1])
         elif self.image_fusion_strategy == 'only_clip':
-            self.cond_latent_transform = nn.Linear(self.clip_dim, self.condition_net_arch_outdim)
+            self.cond_latent_transform = nn.Linear(self.image_out_dim, self.condition_net_arch_outdim)
     
     def reset_cond_features(self):
         self.l_uvw = None
@@ -507,10 +519,10 @@ class PointNet2CloudCondition(PointNet2SemSegSSG):
             use_retained_condition_feature=False
     ):
 
-        image_features = torch.zeros((pointcloud.shape[0], self.clip_dim)).cuda() 
+        image_features = torch.zeros((pointcloud.shape[0], self.image_out_dim)).cuda() 
         with torch.no_grad():
             if class_index is not None and self.image_fusion_strategy != 'none':
-                image_features = self.clip_processor.encode_text(class_index) # shape (B, 512)
+                image_features = self.image_processor.get_image_features(class_index) # shape (B, 512)
                 # normalize clip features
                 image_features = image_features / torch.norm(image_features, dim=1, keepdim=True)
             

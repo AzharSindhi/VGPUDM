@@ -29,7 +29,7 @@ class ViPCDataLoaderTest(Dataset):
         return len(self.key)
 
 class ViPCDataLoader(Dataset):
-    def __init__(self,filepath,data_path,status,pc_input_num=3500, view_align=False, category='all'):
+    def __init__(self,filepath,data_path,status,pc_input_num=3500, view_align=False, category='all', image_size=480):
         super(ViPCDataLoader,self).__init__()
         self.pc_input_num = pc_input_num
         self.status = status
@@ -72,8 +72,9 @@ class ViPCDataLoader(Dataset):
             self.key.append(key)
 
         self.transform = transforms.Compose([
-            transforms.Resize(224),
-            transforms.ToTensor()
+            transforms.Resize(image_size),
+            transforms.ToTensor(),
+            # transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
         ])
 
         print(f'{status} data num: {len(self.key)}')

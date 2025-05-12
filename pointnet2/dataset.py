@@ -65,14 +65,16 @@ def get_dataloader(
         )
     elif args['dataset'] == 'ViPC':
         phase = 'train' if train else 'test'
-        dataset = ViPCDataLoader(args['data_dir'], phase, view_align=args['view_align'], 
-                                category=args['category'], mini=args['mini'],
-                                augmentation=augmentation,
-                                return_augmentation_params=return_augmentation_params,
-                                R=args["R"],
-                                debug=args["debug"],
-                                scale=args['scale'],
-                                )
+        dataset = ViPCDataLoader(
+            args['data_dir'], phase, view_align=args['view_align'], 
+            category=args['category'], mini=args['mini'],
+            augmentation=augmentation,
+            return_augmentation_params=return_augmentation_params,
+            R=args["R"],
+            debug=args["debug"],
+            scale=args['scale'],
+            image_size=args['image_size'],
+        )
         trainloader = torch.utils.data.DataLoader(
             dataset,
             batch_size=batch_size,

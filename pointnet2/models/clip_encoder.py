@@ -9,18 +9,19 @@ class CLIPEncoder:
         self.model, self.preprocess = clip.load("ViT-B/32", device=device)
         self.model.eval()
         self.category_names = ["an image of a " + class_name for class_name in class_names]
+        self.out_dim = 512
 
     
-    def encode_image(self, batch_images):
+    def get_image_features(self, batch_images):
         with torch.no_grad():
             pil_images = [to_pil_image(image) for image in batch_images]
             processed_batch_images = [self.preprocess(pil_image) for pil_image in pil_images]
             batch_images = torch.stack(processed_batch_images).to(self.device)
             return self.model.encode_image(batch_images)
     
-    def encode_text(self, class_index):
+    def get_text_features(self, class_index):
         if class_index.ndim > 1:
-            return self.encode_image(class_index)
+            return self.get_image_features(class_index)
            
         processed_text = []
         for index in class_index:

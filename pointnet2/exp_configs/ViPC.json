@@ -90,7 +90,7 @@
         "dataset": "ViPC",
         "root_directory": "exp_vipc",
         "epochs_per_ckpt": 10,
-        "n_epochs": 100,
+        "n_epochs": 200,
         "learning_rate": 0.0002
     },
     "vipc_dataset_config": {
@@ -100,6 +100,7 @@
         "mini": true,
         "class_names": ["bathtub", "bed", "chair", "desk", "dresser", "monitor", "night_stand", "sofa", "table", "toilet"],
         "npoints": 2048,
+        "image_size": 480,
         "view_align": true,
         "novel_input": false,
         "novel_input_only": false,
