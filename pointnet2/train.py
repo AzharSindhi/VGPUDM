@@ -277,7 +277,7 @@ if __name__ == "__main__":
     if args.debug:
         run_name += "_debug"
     if not trainset_config["mini"]:
-        run_name += f"_full_{trainset_config["category"]}"
+        run_name += f"_full_{trainset_config['category']}"
 
     # override config from args
     pointnet_config['image_fusion_strategy'] = args.image_fusion_strategy
