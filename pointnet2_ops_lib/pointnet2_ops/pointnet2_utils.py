@@ -5,6 +5,9 @@ import warnings
 from torch.autograd import Function
 from typing import *
 from pytorch3d.ops import knn
+import os
+
+os.environ["TORCH_CUDA_ARCH_LIST"]="7.0;7.5;8.0;8.6"
 
 try:
     import pointnet2_ops._ext as _ext
@@ -22,7 +25,6 @@ except ImportError:
     )
     _ext_headers = glob.glob(osp.join(_ext_src_root, "include", "*"))
 
-    os.environ["TORCH_CUDA_ARCH_LIST"] = "7.0;7.5;8.0;8.6"
     _ext = load(
         "_ext",
         sources=_ext_sources,

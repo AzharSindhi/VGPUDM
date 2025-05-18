@@ -1,6 +1,7 @@
 import torch
 import torch.utils.data as data
-from dataloader.dataset_loader import PUGAN,PU1K, ViPCDataLoader, ModelNet10
+from dataloader.dataset_loader import PUGAN,PU1K, ModelNet10
+from dataloader.ViPCdataloader import  ViPCDataLoader
 
 def get_dataloader(
         args,
@@ -8,6 +9,10 @@ def get_dataloader(
 ):
     if args['debug']:
         phase = 'test'
+        augmentation = False
+    if phase == 'vis':
+        args['debug'] = True
+        phase = "test"
         augmentation = False
 
     if phase == 'train':

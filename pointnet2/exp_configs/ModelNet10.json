@@ -97,7 +97,7 @@
         "dataset": "ModelNet10",
         "data_dir": "~/Documents/datasets/ModelNet10/",
         "class_names": ["bathtub", "bed", "chair", "desk", "dresser", "monitor", "night_stand", "sofa", "table", "toilet"],
-        "npoints": 256,
+        "npoints": 1024,
         "novel_input": false,
         "novel_input_only": false,
         "scale": 1,

@@ -12,7 +12,7 @@ from models.clip_encoder import CLIPEncoder
 from models.dino_encoder import DinoEncoder
 from pointnet2.models.pnet import Pnet2Stage
 from pointnet2.models.model_utils import get_embedder
-
+from models.mlp_transform import ProjectCrossAttend
 import torch.nn.functional as F
 import copy
 import numpy as np
@@ -361,6 +361,7 @@ class PointNet2CloudCondition(PointNet2SemSegSSG):
             pe=False
         )
 
+
         
         # build SA module for the noisy point cloud x_t
         arch = self.hparams['architecture']
@@ -475,7 +476,7 @@ class PointNet2CloudCondition(PointNet2SemSegSSG):
             )
 
         self.image_fusion_strategy = self.hparams['image_fusion_strategy']
-
+        self.use_cross_conditioning = self.hparams['use_cross_conditioning']
         # Initialize Image processor
         image_backbone = self.hparams["image_backbone"]
         self.class_names = self.hparams["clip_processor"]["class_names"]
@@ -502,12 +503,26 @@ class PointNet2CloudCondition(PointNet2SemSegSSG):
             self.main_latent_transform = nn.Linear(self.image_out_dim + feature_dim[-1], feature_dim[-1])
         elif self.image_fusion_strategy == 'only_clip':
             self.cond_latent_transform = nn.Linear(self.image_out_dim, self.condition_net_arch_outdim)
+        elif self.image_fusion_strategy == "cross_attention":
+            condition_feature_dims = self.hparams['condition_net_architecture']['feature_dim']
+            self.condition_img_transform = nn.ModuleList([
+                ProjectCrossAttend(feature_dim, self.image_out_dim)
+                for feature_dim in condition_feature_dims[1:]
+            ])
     
     def reset_cond_features(self):
         self.l_uvw = None
         self.encoder_cond_features = None
         self.decoder_cond_features = None
         self.global_feature = None
+    
+    def cross_attend(self, features, image_features, cross_attnd_layer):
+        return None
+        transformed_img_features = self.img_feature_tranform[cross_attnd_layer](image_features)
+        features = cross_attnd_layer(
+            features.permute(0, 2, 1),
+            queries_encoder=transformed_img_features
+        ).permute(0, 2, 1).contiguous()
 
     def forward(
             self,
@@ -534,7 +549,7 @@ class PointNet2CloudCondition(PointNet2SemSegSSG):
 
             xyz, features = self._break_up_pc(pointcloud)
             xyz = xyz / self.scale_factor
-            i_pc = pointcloud[:,:,3:6]
+            i_pc = torch.empty_like(xyz)#pointcloud[:,:,3:6]
 
             uvw, cond_features = self._break_up_pc(condition)
             uvw = uvw / self.scale_factor
@@ -583,7 +598,7 @@ class PointNet2CloudCondition(PointNet2SemSegSSG):
         # remove the condition branch and features based on argument
         # condition on latent vector
         # think of better approach for pointwise features from clip
-
+        # cond_features = torch.cat([cond_features, image_features.unsqueeze(2).expand(-1, -1, cond_features.shape[2])], dim=1)
         l_uvw, l_cond_features = [uvw], [cond_features]
         l_xyz, l_features = [xyz], [features]
         for i in range(len(self.SA_modules)):
@@ -600,7 +615,14 @@ class PointNet2CloudCondition(PointNet2SemSegSSG):
                     record_neighbor_stats=self.record_neighbor_stats,
                     pooling=self.pooling
                 )
-
+                if self.image_fusion_strategy == 'cross_attention':
+                    # cross attend li_cond_features with image features
+                    if image_features.ndim == 2:
+                        image_features = image_features.unsqueeze(2).permute(0, 2, 1)
+                    
+                    li_cond_features = li_cond_features.permute(0, 2, 1)
+                    li_cond_features = self.condition_img_transform[i](li_cond_features, image_features).permute(0, 2, 1).contiguous()
+                
                 l_uvw.append(li_uvw)
                 l_cond_features.append(li_cond_features)
                 # ---- Condition Encoder -----
@@ -642,19 +664,22 @@ class PointNet2CloudCondition(PointNet2SemSegSSG):
             # l_features[-1] = self.main_latent_transform(l_features[-1].permute(0, 2, 1)).permute(0, 2, 1)
         elif self.image_fusion_strategy == 'only_clip':
             cond_features = image_features.unsqueeze(2).expand(-1, -1, self.condition_net_arch_outpoints).to(l_features[-1].dtype)
-            l_cond_features[-1] = self.cond_latent_transform(cond_features.permute(0, 2, 1)).permute(0, 2, 1)
+            cond_features = torch.cat([cond_features, uvw], dim=1)
+            cond_features = self.cond_latent_transform(cond_features.permute(0, 2, 1)).permute(0, 2, 1)
+            l_cond_features.append(cond_features)
 
-        if len(l_cond_features) > 1:           
+        if len(l_cond_features) > 1 and self.use_cross_conditioning:           
             # ---- Cross-Attention ----
+            l_features[-1] = self.att_noise(
+                l_cond_features[-1].permute(0, 2, 1),
+                queries_encoder=l_features[-1].permute(0, 2, 1)
+            ).permute(0, 2, 1).contiguous()
+
             l_cond_features[-1] = self.att_c(
                 l_features[-1].permute(0, 2, 1),
                 queries_encoder=l_cond_features[-1].permute(0, 2, 1)
             ).permute(0, 2, 1).contiguous()
 
-            l_features[-1] = self.att_noise(
-                l_cond_features[-1].permute(0, 2, 1),
-                queries_encoder=l_features[-1].permute(0, 2, 1)
-            ).permute(0, 2, 1).contiguous()
 
         if self.include_local_feature:
             if use_retained_condition_feature and self.l_uvw is None:
@@ -701,6 +726,12 @@ class PointNet2CloudCondition(PointNet2SemSegSSG):
         if(self.include_local_feature and self.condition_loss):
             condition_feature = l_cond_features[0]
             condition_feature = torch.cat([condition_feature.transpose(1,2), uvw], dim=-1).permute(0,2,1)
+            condition_out = self.fc_layer_c(condition_feature).permute(0,2,1)
+            return out,condition_out
+        elif self.condition_loss and self.image_fusion_strategy == 'only_clip':
+            # repeat the last dimension such that it matches the number of points
+            R = uvw.shape[1] // l_cond_features[-1].shape[2]
+            condition_feature = l_cond_features[-1].repeat_interleave(R, dim=2)
             condition_out = self.fc_layer_c(condition_feature).permute(0,2,1)
             return out,condition_out
         else:

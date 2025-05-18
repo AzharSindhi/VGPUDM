@@ -10,6 +10,9 @@ from einops import rearrange, repeat
 from pointops.functions import pointops
 import torch.backends.cudnn as cudnn
 import torch.nn.functional as F
+from sklearn.neighbors import NearestNeighbors
+import numpy as np
+
 
 def pc_normalize(pc):
     centroid = np.mean(pc, axis=0)
@@ -384,6 +387,27 @@ def get_interpolate(point, R=4, base=4):
         i = midpoint_interpolate(i, up_rate=r, normal=True)
     return i.permute(0, 2, 1)
 
+
+def get_density_weights(points, k=16):
+    # points: (N, 3) numpy array
+    nbrs = NearestNeighbors(n_neighbors=k).fit(points)
+    dists, _ = nbrs.kneighbors(points)
+    density = 1 / (np.mean(dists, axis=1) + 1e-6)
+    sparse_weight = 1 / (density + 1e-3)
+    sparse_weight /= sparse_weight.max()  # normalize to [0, 1]
+    return sparse_weight  # shape: (N,)
+
+
+def focal_weighted_mse(pred, target, weights, gamma=2):
+    per_point_mse = torch.sum((pred - target) ** 2, dim=-1)
+    focal_weights = weights ** gamma  # gamma > 1 focuses on sparse/hard points
+    return (focal_weights * per_point_mse).mean()
+
+def compute_weights(pred, target):
+    pass
+
+
+
 def sampling(
         net,
         size,
@@ -548,8 +572,9 @@ def training_loss(
         label=None,
         condition=None,
         class_index=None,
-        alpha=1.0,
+        alpha=0.4,
         gamma=None,
+        use_interpolation=True,
 ):
     _dh = diffusion_hyperparams
     T, Alpha_bar = _dh["T"], _dh["Alpha_bar"]
@@ -558,11 +583,10 @@ def training_loss(
     z = std_normal(x0.shape)
     # xt = sqrt(at_) * X0 + sqrt(1-at_) * z ==> q(xt|x0)
     xt = torch.sqrt(Alpha_bar[diffusion_steps]) * x0 + torch.sqrt(1 - Alpha_bar[diffusion_steps]) * z
-    if xt.shape[1] == condition.shape[1]: # for ViPC
-        i = xt
-    else:
+    if use_interpolation:
         i = midpoint_interpolate(condition.permute(0, 2, 1)).permute(0, 2, 1)
-    
+    else:
+        i = torch.zeros_like(xt)
     xt = torch.cat([xt, i], dim=-1)
     epsilon_theta = net(
         xt,

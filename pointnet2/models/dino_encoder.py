@@ -14,10 +14,10 @@
 
 import torch
 from torchvision import transforms as pth_transforms
-import vision_transformer as vits
+from . import vision_transformer as vits
 
 class DinoEncoder:
-    def __init__(self, image_size=480, arch = 'vit_small', patch_size = 8, device="cuda") -> None:
+    def __init__(self, image_size=480, arch = 'vit_small', patch_size = 8, aggregate="none", device="cuda") -> None:
         # convert args to init parameters
 
 
@@ -46,8 +46,10 @@ class DinoEncoder:
         else:
             assert False, "There is no reference weights available for this model => We use random weights."
 
+        self.aggregate = aggregate
         self.model = model
         self.out_dim = 384 #model.embed_dim
+        self.to_pil_test = pth_transforms.ToPILImage()
 
     def get_image_features(self, img):
 
@@ -58,12 +60,26 @@ class DinoEncoder:
         # ])
         
         img = self.normalize_transform(img)
+        # img_test = self.to_pil_test(img[0])
+        # img_test.save("test.png")
         # image has already batch dimension
         # make the image divisible by the patch size
         w, h = img.shape[2] - img.shape[2] % self.patch_size, img.shape[3] - img.shape[3] % self.patch_size
         img = img[:, :, :w, :h]
         
         attentions = self.model.get_intermediate_layers(img.to(self.device), n=1)
-        # get the class token embedding
-        class_token = attentions[0][:, 0, :]
+        class_token = None
+        if self.aggregate == "class":
+            # get the class token embedding
+            class_token = attentions[0][:, 0, :]
+        elif self.aggregate == "avgpool":
+            # average pooling across second dim
+            output = torch.cat([x[:, 0] for x in attentions], dim=-1)
+            output = torch.cat((output.unsqueeze(-1), torch.mean(attentions[-1][:, 1:], dim=1).unsqueeze(-1)), dim=-1)
+            class_token = output.reshape(output.shape[0], -1)
+        elif self.aggregate == "none":
+            class_token = torch.cat(attentions, dim=-1)
+        else:
+            raise ValueError("Invalid aggregate type")
+
         return class_token

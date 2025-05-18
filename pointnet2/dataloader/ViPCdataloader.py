@@ -9,6 +9,8 @@ import pickle
 import random
 import math 
 from tqdm import tqdm
+import open3d as o3d
+import copy
 
 
 
@@ -29,7 +31,9 @@ class ViPCDataLoaderTest(Dataset):
         return len(self.key)
 
 class ViPCDataLoader(Dataset):
-    def __init__(self,filepath,data_path,status,pc_input_num=3500, view_align=False, category='all', image_size=480):
+    def __init__(self, data_path, status, pc_input_num=3500, R=4, scale=1, image_size=480, 
+                 augmentation=False, return_augmentation_params=False, debug=False, 
+                 view_align=False, category='plane', mini=False):
         super(ViPCDataLoader,self).__init__()
         self.pc_input_num = pc_input_num
         self.status = status
@@ -53,8 +57,8 @@ class ViPCDataLoader(Dataset):
             'cellphone': '04401088', 
             'watercraft':'04530566'
         }
-
-        with open(filepath,'r') as f:
+        filename = f"{status}_list.txt"
+        with open(os.path.join(data_path, filename),'r') as f:
             line = f.readline()
             while (line):
                 self.filelist.append(line)
@@ -70,6 +74,12 @@ class ViPCDataLoader(Dataset):
                     continue
             self.cat.append(key.split(';')[0])
             self.key.append(key)
+        
+        if debug:
+            self.key = self.key[:10]
+        elif mini:
+            nsamples = {'train': 2000, 'test': 500}
+            self.key = random.sample(self.key, nsamples[status])
 
         self.transform = transforms.Compose([
             transforms.Resize(image_size),
@@ -77,7 +87,24 @@ class ViPCDataLoader(Dataset):
             # transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
         ])
 
-        print(f'{status} data num: {len(self.key)}')
+        self.train = status == "train"
+        self.augmentation = augmentation  # augmentation could be a dict or False
+        self.return_augmentation_params = return_augmentation_params
+
+        # ---- label ----
+        self.labels = np.full(shape=(len(self.key),), fill_value=R-1, dtype=np.int64)
+        # ---- label ----
+
+        self.scale = scale
+        # self.input_data = self.input_data * scale
+        # self.gt_data = self.gt_data * scale
+
+        print('partial point clouds:', len(self.key))
+        # if not benchmark:
+        print('gt complete point clouds:', len(self.key))
+        print('labels', len(self.labels))
+        self.labels = self.labels.astype(int)
+        self.R = R
 
 
     def rotation_z(self, pts, theta):
@@ -141,8 +168,13 @@ class ViPCDataLoader(Dataset):
         with open(pc_part_path,'rb') as f:
             pc_part = pickle.load(f).astype(np.float32)
         # incase some item point number less than 3500 
-        if pc_part.shape[0]<self.pc_input_num:
-            pc_part = np.repeat(pc_part,(self.pc_input_num//pc_part.shape[0])+1,axis=0)[0:self.pc_input_num]
+        # if pc_part.shape[0]<self.pc_input_num:
+        #     pc_part = np.repeat(pc_part,(self.pc_input_num//pc_part.shape[0])+1,axis=0)[0:self.pc_input_num]
+
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(pc_part)
+        pcd_down = pcd.farthest_point_down_sample(self.pc_input_num // self.R)
+        pc_part = np.asarray(pcd_down.points)
 
 
         # load the view metadata
@@ -169,7 +201,39 @@ class ViPCDataLoader(Dataset):
         pc_part = pc_part-gt_mean
         pc_part = pc_part/pc_L_max
 
-        return views.float(), torch.from_numpy(pc).float(), torch.from_numpy(pc_part).float()
+        result = {}
+        result['partial'] = (pc_part * self.scale).astype(np.float32)
+        result['complete'] = (pc * self.scale).astype(np.float32)
+        # augment the point clouds
+        if (isinstance(self.augmentation, dict) and self.train):
+            result_list = list(result.values())
+            if self.return_augmentation_params:
+                result_list, augmentation_params = augment_cloud(
+                    result_list,
+                    self.augmentation,
+                    return_augmentation_params=True
+                )
+            else:
+                result_list = augment_cloud(
+                    result_list,
+                    self.augmentation,
+                    return_augmentation_params=False
+                )
+            for idx, key in enumerate(result.keys()):
+                result[key] = result_list[idx]
+
+        if self.return_augmentation_params:
+            for key in augmentation_params.keys():
+                result[key] = augmentation_params[key]
+        for key in result.keys():
+            result[key] = torch.from_numpy(result[key])
+        
+        # if(not self.train):
+        result['name'] = copy.deepcopy(self.key[idx]).replace("/", "_")
+
+        result['label'] = np.array(self.labels[idx])
+        result['class_index'] = views.float().numpy()
+        return result
 
     def __len__(self):
         return len(self.key)
@@ -177,9 +241,10 @@ class ViPCDataLoader(Dataset):
 
 if __name__ == "__main__":
     from torch.utils.data import DataLoader
-    category = "table"
+    category = "plane"
     status = "train"
-    ViPCDataset = ViPCDataLoader(f'{status}_list_mini_{category}.txt',data_path='/home/woody/iwnt/iwnt150h/datasets/ShapeNetViPC-Dataset',status=status, category = category)
+    R = 4
+    ViPCDataset = ViPCDataLoader(data_path='/home/woody/iwnt/iwnt150h/datasets/ShapeNetViPC-Dataset',status=status, category = category)
     train_loader = DataLoader(ViPCDataset,
                               batch_size=1,
                               num_workers=1,
@@ -189,9 +254,9 @@ if __name__ == "__main__":
     
 
 
-    for image, gt, partial in tqdm(train_loader):
+    for result in tqdm(train_loader):
         
-        print(image.shape)
+        print(result["complete"].shape)
         
-        pass
+        # break
     
