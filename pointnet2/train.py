@@ -229,7 +229,7 @@ if __name__ == "__main__":
     parser.add_argument('--no_cross_conditioning', action='store_true', default=False)
     parser.add_argument('--no_interpolation', action='store_true', default=False)
     parser.add_argument('--debug', action='store_true', default=False)
-    parser.add_argument('--early_stopping_patience', type=int, default=100)
+    parser.add_argument('--early_stopping_patience', type=int, default=20)
     parser.add_argument('--run_name', type=str, default="")
     parser.add_argument('--image_backbone', type=str, default="dino")
     parser.add_argument('--batch_size', type=int, default=30)

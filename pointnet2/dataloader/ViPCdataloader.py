@@ -1,20 +1,32 @@
-import os
-from torchvision import transforms
-import os.path
-from torch.utils.data import Dataset
 import torch
+import numpy as np
+import torch.utils.data as data
+
+import os
+
+import copy
+import sys
+
+import glob
+import open3d
+
+from pointnet2.util import load_h5_data
+
+sys.path.insert(0, os.path.dirname(__file__))
+from dataset_utils import augment_cloud
 from PIL import Image
+from torchvision import transforms
+import h5py
 import numpy as np
 import pickle
 import random
 import math 
 from tqdm import tqdm
 import open3d as o3d
-import copy
+import time
 
 
-
-class ViPCDataLoaderTest(Dataset):
+class ViPCDataLoaderTest(data.Dataset):
     def __init__(self) -> None:
         super().__init__()
         self.key = [0] * 100
@@ -30,7 +42,7 @@ class ViPCDataLoaderTest(Dataset):
     def __len__(self):
         return len(self.key)
 
-class ViPCDataLoader(Dataset):
+class ViPCDataLoader(data.Dataset):
     def __init__(self, data_path, status, pc_input_num=3500, R=4, scale=1, image_size=480, 
                  augmentation=False, return_augmentation_params=False, debug=False, 
                  view_align=False, category='plane', mini=False):
