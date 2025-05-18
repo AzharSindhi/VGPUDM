@@ -180,8 +180,8 @@ class ViPCDataLoader(data.Dataset):
         with open(pc_part_path,'rb') as f:
             pc_part = pickle.load(f).astype(np.float32)
         # incase some item point number less than 3500 
-        # if pc_part.shape[0]<self.pc_input_num:
-        #     pc_part = np.repeat(pc_part,(self.pc_input_num//pc_part.shape[0])+1,axis=0)[0:self.pc_input_num]
+        if pc_part.shape[0]<self.pc_input_num:
+            pc_part = np.repeat(pc_part,(self.pc_input_num//pc_part.shape[0])+1,axis=0)[0:self.pc_input_num]
 
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(pc_part)
