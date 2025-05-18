@@ -117,6 +117,7 @@ class ViPCDataLoader(data.Dataset):
         print('labels', len(self.labels))
         self.labels = self.labels.astype(int)
         self.R = R
+        self.npoints = self.pc_input_num // self.R
 
 
     def rotation_z(self, pts, theta):
@@ -180,14 +181,10 @@ class ViPCDataLoader(data.Dataset):
         with open(pc_part_path,'rb') as f:
             pc_part = pickle.load(f).astype(np.float32)
         # incase some item point number less than 3500 
-        if pc_part.shape[0]<self.pc_input_num:
-            pc_part = np.repeat(pc_part,(self.pc_input_num//pc_part.shape[0])+1,axis=0)[0:self.pc_input_num]
-
-        pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(pc_part)
-        pcd_down = pcd.farthest_point_down_sample(self.pc_input_num // self.R)
-        pc_part = np.asarray(pcd_down.points)
-
+        if pc_part.shape[0]<self.npoints:
+            pc_part = np.repeat(pc_part,(self.npoints//pc_part.shape[0])+1,axis=0)[0:self.npoints]
+        # assert pc_part.shape[0] == pc.shape[0]
+        # assert pc_part.shape[0] == 3500
 
         # load the view metadata
         image_view_id = view_path.split('.')[0].split('/')[-1]
@@ -212,6 +209,11 @@ class ViPCDataLoader(data.Dataset):
 
         pc_part = pc_part-gt_mean
         pc_part = pc_part/pc_L_max
+
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(pc_part)
+        pcd_down = pcd.farthest_point_down_sample(self.npoints)
+        pc_part = np.asarray(pcd_down.points)
 
         result = {}
         result['partial'] = (pc_part * self.scale).astype(np.float32)
@@ -245,6 +247,7 @@ class ViPCDataLoader(data.Dataset):
 
         result['label'] = np.array(self.labels[idx])
         result['class_index'] = views.float().numpy()
+
         return result
 
     def __len__(self):
@@ -256,9 +259,10 @@ if __name__ == "__main__":
     category = "plane"
     status = "train"
     R = 4
-    ViPCDataset = ViPCDataLoader(data_path='/home/woody/iwnt/iwnt150h/datasets/ShapeNetViPC-Dataset',status=status, category = category)
+    path = os.path.expanduser("~/Documents/datasets/ShapeNetViPC-Dataset")
+    ViPCDataset = ViPCDataLoader(data_path=path,status=status, category = category)
     train_loader = DataLoader(ViPCDataset,
-                              batch_size=1,
+                              batch_size=40,
                               num_workers=1,
                               shuffle=True,
                               drop_last=True)
@@ -268,7 +272,8 @@ if __name__ == "__main__":
 
     for result in tqdm(train_loader):
         
-        print(result["complete"].shape)
+        # print(result["complete"].shape)
+        pass
         
         # break
     
