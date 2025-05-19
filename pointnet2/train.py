@@ -225,7 +225,7 @@ if __name__ == "__main__":
     parser.add_argument('-a', '--alpha', type=float, default=1.0)
     parser.add_argument('-g', '--gamma', type=float, default=0.5)
     parser.add_argument('-m', '--model_path', type=str, default="")
-    parser.add_argument('-i', '--image_fusion_strategy', type=str, default="only_clip")
+    parser.add_argument('-i', '--image_fusion_strategy', type=str, default="cross_attention")
     parser.add_argument('--no_cross_conditioning', action='store_true', default=False)
     parser.add_argument('--no_interpolation', action='store_true', default=False)
     parser.add_argument('--debug', action='store_true', default=False)

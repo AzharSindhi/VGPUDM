@@ -12,6 +12,7 @@ module load cuda/11.8.0
 module load gcc/11.5.0
 
 conda activate pudm
-sh compile_node.sh
+sh remove.sh
+sh compile.sh
 cd pointnet2
 python train.py -d ViPC -i cross_attention --early_stopping_patience 20 --image_backbone dino

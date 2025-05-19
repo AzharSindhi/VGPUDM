@@ -1,4 +1,2 @@
 # from pointnet2.models.pointnet2_ssg_cls import PointNet2ClassificationSSG
 from pointnet2.models.pointnet2_ssg_sem import PointNet2SemSegSSG
-from pointnet2.models.pointnet2_with_pcld_condition import AttentionFusion
-
