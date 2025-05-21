@@ -1,10 +1,10 @@
 import glob
 import os
 import os.path as osp
+os.environ["TORCH_CUDA_ARCH_LIST"]="7.0;7.5;8.0;8.6"
 
 from setuptools import find_packages, setup
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
-os.environ["TORCH_CUDA_ARCH_LIST"]="7.0;7.5;8.0;8.6"
 
 this_dir = osp.dirname(osp.abspath(__file__))
 _ext_src_root = osp.join("pointnet2_ops", "_ext-src")

@@ -123,9 +123,10 @@ def get_knn_pts(k, pts, center_pts, return_idx=False):
         return knn_pts, knn_idx
 
 
-def midpoint_interpolate(sparse_pts, up_rate=4, normal=False, ):
+def midpoint_interpolate(sparse_pts, up_rate=1, normal=False, ):
     # sparse_pts: (b, 3, 256)
-
+    if up_rate == 1:
+        return sparse_pts
     if (normal):
         sparse_pts, centroid, furthest_distance = normalize_point_cloud(sparse_pts)
 
@@ -379,8 +380,9 @@ def get_rate_list(R=4,base=4):
     if(R - np.power(base,l) > 0): ls.append(2)
     return ls
 
-def get_interpolate(point, R=4, base=4):
-
+def get_interpolate(point, R=1, base=4):
+    if R == 1:
+        return point
     ls = get_rate_list(R,base)
     i = point.permute(0, 2, 1)
     for r in ls:
@@ -415,8 +417,9 @@ def sampling(
         print_every_n_steps=100,
         label=0,
         condition=None,
-        R=4,
-        gamma=0.5
+        R=1,
+        gamma=0.5,
+        use_interpolation=True
 ):
     print("---- DDPM Sampling ----")
 
@@ -434,7 +437,10 @@ def sampling(
         label = torch.ones(size[0]).long().cuda() * label
     start_iter = T - 1
 
-    i = get_interpolate(condition,R)
+    if use_interpolation:
+        i = get_interpolate(condition,R)
+    else:
+        i = torch.zeros_like(x)
     with torch.no_grad():
         print('reverse step: %d' % T, flush=True)
         for t in range(start_iter, -1, -1): # t from T-1 to 0
@@ -469,9 +475,10 @@ def sampling_ddim(
         print_every_n_steps=10,
         label=0,
         condition=None,
-        R=4,
+        R=1,
         gamma=0.5,
-        step = 30
+        step = 30,
+        use_interpolation=True
 ):
 
     print("---- DDIM Sampling ----")
@@ -493,7 +500,10 @@ def sampling_ddim(
     ts2 = torch.linspace(step // 2, 0, (step // 2), dtype=torch.int64)
     ts = torch.cat([ts1, ts2], dim=0)
     steps = reversed(range(len(ts)))
-    i = get_interpolate(condition,R)
+    if use_interpolation:
+        i = get_interpolate(condition,R)
+    else:
+        i = torch.zeros_like(x)
     condition_pre = None
     with torch.no_grad():
         for step,t in zip(steps,ts): # t from T-1 to 0
@@ -572,7 +582,7 @@ def training_loss(
         label=None,
         condition=None,
         class_index=None,
-        alpha=0.4,
+        alpha=1.0,
         gamma=None,
         use_interpolation=True,
 ):

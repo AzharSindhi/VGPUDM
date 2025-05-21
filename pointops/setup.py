@@ -1,8 +1,9 @@
 #python3 setup.py install
 from setuptools import setup
-from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 import os
+from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 os.environ["TORCH_CUDA_ARCH_LIST"]="7.0;7.5;8.0;8.6"
+
 
 setup(
     name='pointops',

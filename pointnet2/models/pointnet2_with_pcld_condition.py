@@ -502,7 +502,7 @@ class PointNet2CloudCondition(PointNet2SemSegSSG):
             self.cond_latent_transform = nn.Linear(self.image_out_dim + self.condition_net_arch_outdim, self.condition_net_arch_outdim)
             self.main_latent_transform = nn.Linear(self.image_out_dim + feature_dim[-1], feature_dim[-1])
         elif self.image_fusion_strategy == 'only_clip':
-            self.cond_latent_transform = nn.Linear(self.image_out_dim, self.condition_net_arch_outdim)
+            self.cond_latent_transform = ProjectCrossAttend(self.condition_net_arch_outdim, self.image_out_dim)
         elif self.image_fusion_strategy == "cross_attention":
             condition_feature_dims = self.hparams['condition_net_architecture']['feature_dim']
             self.condition_img_transform = nn.ModuleList([
@@ -549,7 +549,7 @@ class PointNet2CloudCondition(PointNet2SemSegSSG):
 
             xyz, features = self._break_up_pc(pointcloud)
             xyz = xyz / self.scale_factor
-            i_pc = torch.empty_like(xyz)#pointcloud[:,:,3:6]
+            i_pc = pointcloud[:,:,3:6]
 
             uvw, cond_features = self._break_up_pc(condition)
             uvw = uvw / self.scale_factor
@@ -621,7 +621,7 @@ class PointNet2CloudCondition(PointNet2SemSegSSG):
                         image_features = image_features.unsqueeze(2).permute(0, 2, 1)
                     
                     li_cond_features = li_cond_features.permute(0, 2, 1)
-                    li_cond_features = self.condition_img_transform[i](li_cond_features, image_features).permute(0, 2, 1).contiguous()
+                    li_cond_features = self.condition_img_transform[i](li_cond_features, image_features.clone()).permute(0, 2, 1).contiguous()
                 
                 l_uvw.append(li_uvw)
                 l_cond_features.append(li_cond_features)
@@ -663,22 +663,25 @@ class PointNet2CloudCondition(PointNet2SemSegSSG):
             l_cond_features[-1] = self.cond_latent_transform(l_cond_features[-1].permute(0, 2, 1)).permute(0, 2, 1)
             # l_features[-1] = self.main_latent_transform(l_features[-1].permute(0, 2, 1)).permute(0, 2, 1)
         elif self.image_fusion_strategy == 'only_clip':
-            cond_features = image_features.unsqueeze(2).expand(-1, -1, self.condition_net_arch_outpoints).to(l_features[-1].dtype)
-            cond_features = torch.cat([cond_features, uvw], dim=1)
-            cond_features = self.cond_latent_transform(cond_features.permute(0, 2, 1)).permute(0, 2, 1)
-            l_cond_features.append(cond_features)
+            # cross attend l_cond_features[-1] with image_features
+            # l_cond_features[-1] shape (B, 512, N)
+            # image_features shape (B, 512)
+            # expand image_features to (B, 512, N)
+            image_features = image_features.unsqueeze(1)#.expand(-1, l_cond_features[-1].shape[2], -1)
+            l_cond_features[-1] = self.cond_latent_transform(l_cond_features[-1].permute(0, 2, 1), image_features).permute(0, 2, 1).contiguous()
 
         if len(l_cond_features) > 1 and self.use_cross_conditioning:           
             # ---- Cross-Attention ----
-            l_features[-1] = self.att_noise(
-                l_cond_features[-1].permute(0, 2, 1),
-                queries_encoder=l_features[-1].permute(0, 2, 1)
-            ).permute(0, 2, 1).contiguous()
-
             l_cond_features[-1] = self.att_c(
                 l_features[-1].permute(0, 2, 1),
                 queries_encoder=l_cond_features[-1].permute(0, 2, 1)
             ).permute(0, 2, 1).contiguous()
+
+            l_features[-1] = self.att_noise(
+                l_cond_features[-1].permute(0, 2, 1),
+                queries_encoder=l_features[-1].permute(0, 2, 1)
+            ).permute(0, 2, 1).contiguous()
+            # ---- Cross-Attention ----
 
 
         if self.include_local_feature:

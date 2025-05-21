@@ -43,6 +43,7 @@ def evaluate(
         save_gt = False,            # true dense point cloud
         save_mesh = False,
         p2f = False,
+        use_interpolation = True,
 ):
     CD_meter = AverageMeter()
     HD_meter = AverageMeter()
@@ -94,7 +95,8 @@ def evaluate(
                 condition=condition,
                 R=R,
                 gamma=gamma,
-                step=step
+                step=step,
+                use_interpolation=use_interpolation,
             )
         else:
             generated_data,condition_pre,z = sampling(
@@ -105,7 +107,8 @@ def evaluate(
                 label=label,
                 condition=condition,
                 R=R,
-                gamma=gamma
+                gamma=gamma,
+                use_interpolation=use_interpolation,
             )
 
         end_time = time.time() - start_time

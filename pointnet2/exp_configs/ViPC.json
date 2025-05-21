@@ -100,7 +100,7 @@
         "mini": false,
         "class_names": ["bathtub", "bed", "chair", "desk", "dresser", "monitor", "night_stand", "sofa", "table", "toilet"],
         "npoints": 3500,
-        "image_size": 192,
+        "image_size": 256,
         "view_align": true,
         "novel_input": false,
         "novel_input_only": false,
@@ -118,7 +118,7 @@
             "translation_magnitude": 0.1,
             "noise_magnitude_for_generated_samples": 0
         },
-        "R": 4
+        "R": 1
     },
     "gen_config": {
         "ckpt_path": "logs/checkpoint"

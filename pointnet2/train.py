@@ -57,6 +57,44 @@ def train_one_epoch(model, optimizer, dataloader, diffusion_hyperparams, use_int
         progress.update(task_id, advance=1, description=f"[Train] Loss: {avg_loss:.4f}")
     return epoch_loss / len(dataloader)
 
+def get_early_stopping_counter(test_loss, best_loss, previous_counter):
+    if test_loss < best_loss:
+        return 0
+    else:
+        return previous_counter + 1
+
+def run_samples(net, vis_dataloader, vis_dir, use_interpolation):
+    net.eval()
+    with redirect_stdout(io.StringIO()):    
+        cd_meter_avg, hd_meter_avg, p2f_meter_avg, total_meta, _ = generate_samples(
+            net,
+            vis_dataloader,
+            diffusion_hyperparams,
+            print_every_n_steps=200,
+            scale=1,
+            compute_cd=True,
+            return_all_metrics=False,
+            R=trainset_config["R"],
+            npoints=trainset_config["npoints"],
+            gamma=pointnet_config["gamma"],
+            T=diffusion_config["T"],
+            step=diffusion_config["T"],
+            mesh_path = None,
+            p2f_root=None,
+            save_dir = vis_dir,
+            save_xyz = True,            # pre dense point cloud
+            save_sp=False,               # pre sparse point cloud
+            save_z = False,             # input Gaussian noise
+            save_condition = True,     # input sparse point cloud
+            save_gt = True,            # true dense point cloud
+            save_mesh = False,
+            p2f = False,
+            use_interpolation = use_interpolation,
+        )
+
+        return cd_meter_avg, hd_meter_avg
+
+
 def train(config_file, model_path, dataset, root_directory, run_name, n_epochs, epochs_per_ckpt, learning_rate):
     # create the tensorboard run with run_name
     tb = SummaryWriter(comment=run_name)
@@ -85,6 +123,8 @@ def train(config_file, model_path, dataset, root_directory, run_name, n_epochs, 
     early_stopping_counter = 0
     cd_meter_avg = float('inf')
     hd_meter_avg = float('inf')
+    test_loss = float('inf') # to log the first checkpoint
+    test_log_interval = args.test_log_interval
     use_interpolation = pointnet_config['use_interpolation']
 
     if model_path != "":
@@ -100,8 +140,7 @@ def train(config_file, model_path, dataset, root_directory, run_name, n_epochs, 
         print(f'Loaded checkpoint from {model_path}', flush=True)
 
     optimizer = torch.optim.Adam(net.parameters(), lr=learning_rate)
-    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=10, verbose=True)
-
+    # scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=10, verbose=True)
     console = Console()
     console.print(f"[bold yellow]Training for {n_epochs} epochs...[/bold yellow]")
 
@@ -116,57 +155,34 @@ def train(config_file, model_path, dataset, root_directory, run_name, n_epochs, 
         for epoch in range(start_epoch, n_epochs):
             console.print(f"\n[bold cyan]Epoch {epoch + 1}/{n_epochs}[/bold cyan]")
             epoch_start_time = time.time()
-
             train_task = progress.add_task("[Train]", total=len(trainloader))
             train_loss = train_one_epoch(net, optimizer, trainloader, diffusion_hyperparams, use_interpolation, progress, train_task)
-
             test_task = progress.add_task("[Eval]", total=len(testloader))
-            test_loss = evaluate(net, testloader, diffusion_hyperparams, use_interpolation, progress, test_task)
-
-            scheduler.step(test_loss)
-            epoch_duration = time.time() - epoch_start_time
-
             checkpoint = {
                 'epoch': epoch,
                 'model_state_dict': net.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
             }
-            torch.save(checkpoint, os.path.join(output_directory, 'latest_checkpoint.pt'))
-            stop = False
-            if test_loss < best_test_loss:
-                best_test_loss = test_loss
-                early_stopping_counter = 0
-                torch.save(checkpoint, os.path.join(output_directory, 'best_checkpoint.pt'))
-                # with redirect_stdout(io.StringIO()):    
-                #     cd_meter_avg, hd_meter_avg, p2f_meter_avg, total_meta, _ = generate_samples(
-                #         net,
-                #         vis_dataloader,
-                #         diffusion_hyperparams,
-                #         print_every_n_steps=200,
-                #         scale=1,
-                #         compute_cd=True,
-                #         return_all_metrics=False,
-                #         R=4,
-                #         npoints=1024,
-                #         gamma=pointnet_config["gamma"],
-                #         T=diffusion_config["T"],
-                #         step=30,
-                #         mesh_path = None,
-                #         p2f_root=None,
-                #         save_dir = vis_dir,
-                #         save_xyz = False,            # pre dense point cloud
-                #         save_sp=False,               # pre sparse point cloud
-                #         save_z = False,             # input Gaussian noise
-                #         save_condition = False,     # input sparse point cloud
-                #         save_gt = False,            # true dense point cloud
-                #         save_mesh = False,
-                #         p2f = False,
-                #     )
+            
+            if epoch % test_log_interval == 0:
+                test_loss = evaluate(net, testloader, diffusion_hyperparams, use_interpolation, progress, test_task)
+                if test_loss < best_test_loss:
+                    best_test_loss = test_loss
+                    early_stopping_counter = 0
+                    torch.save(checkpoint, os.path.join(output_directory, 'best_checkpoint.pt'))
+                else:
+                    early_stopping_counter += 1
+
+                cd_meter_avg, hd_meter_avg = run_samples(net, vis_dataloader, vis_dir, args.use_interpolation)
+                tb.add_scalar('CD_best', cd_meter_avg, epoch)
+                tb.add_scalar('HD_best', hd_meter_avg, epoch)
+                console.print(f"[yellow]CD_best: {cd_meter_avg:.4f} | HD_best: {hd_meter_avg:.4f}[/yellow]")
                 
-            else:
-                early_stopping_counter += 1
-                if early_stopping_counter >= args.early_stopping_patience:
-                    stop = True
+                # scheduler.step(test_loss)
+            
+            epoch_duration = time.time() - epoch_start_time
+            if args.save_last_ckpt:
+                torch.save(checkpoint, os.path.join(output_directory, 'latest_checkpoint.pt'))
             
             console.print(f"[green]Epoch Duration: {epoch_duration:.2f}s | Train Loss: {train_loss:.4f} | Test Loss: {test_loss:.4f} | CD_best: {cd_meter_avg:.4f} | HD_best: {hd_meter_avg:.4f}[/green]")
             tb.add_scalar('Log-Train-Loss', train_loss, epoch)
@@ -175,46 +191,10 @@ def train(config_file, model_path, dataset, root_directory, run_name, n_epochs, 
             
             progress.remove_task(train_task)
             progress.remove_task(test_task)
-            if stop:
+            if early_stopping_counter >= args.early_stopping_patience:
                 console.print("[red]Early stopping triggered. Training stopped.[/red]")
                 break
         
-        console.print("[yellow]Calculating evaluation metrics...[/yellow]")
-        # load the best checkpoint
-        checkpoint = torch.load(os.path.join(output_directory, 'best_checkpoint.pt'))
-        net.load_state_dict(checkpoint['model_state_dict'])
-        # optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        net.eval()
-        with redirect_stdout(io.StringIO()):    
-            cd_meter_avg, hd_meter_avg, p2f_meter_avg, total_meta, _ = generate_samples(
-                net,
-                vis_dataloader,
-                diffusion_hyperparams,
-                print_every_n_steps=200,
-                scale=1,
-                compute_cd=True,
-                return_all_metrics=False,
-                R=4,
-                npoints=trainset_config["npoints"],
-                gamma=pointnet_config["gamma"],
-                T=diffusion_config["T"],
-                step=30,
-                mesh_path = None,
-                p2f_root=None,
-                save_dir = vis_dir,
-                save_xyz = True,            # pre dense point cloud
-                save_sp=False,               # pre sparse point cloud
-                save_z = False,             # input Gaussian noise
-                save_condition = True,     # input sparse point cloud
-                save_gt = True,            # true dense point cloud
-                save_mesh = False,
-                p2f = False,
-            )
-            tb.add_scalar('CD_best', cd_meter_avg, epoch)
-            tb.add_scalar('HD_best', hd_meter_avg, epoch)
-        
-        console.print(f"[yellow]CD_best: {cd_meter_avg:.4f} | HD_best: {hd_meter_avg:.4f}[/yellow]")
-
     tb.close()
 
 if __name__ == "__main__":
@@ -225,15 +205,18 @@ if __name__ == "__main__":
     parser.add_argument('-a', '--alpha', type=float, default=1.0)
     parser.add_argument('-g', '--gamma', type=float, default=0.5)
     parser.add_argument('-m', '--model_path', type=str, default="")
-    parser.add_argument('-i', '--image_fusion_strategy', type=str, default="cross_attention")
+    parser.add_argument('-i', '--image_fusion_strategy', type=str, default="only_clip")
     parser.add_argument('--no_cross_conditioning', action='store_true', default=False)
-    parser.add_argument('--no_interpolation', action='store_true', default=False)
+    parser.add_argument('--use_interpolation', action='store_true', default=True)
     parser.add_argument('--debug', action='store_true', default=False)
+    parser.add_argument('--mini', action='store_true', default=False)
     parser.add_argument('--early_stopping_patience', type=int, default=20)
     parser.add_argument('--run_name', type=str, default="")
-    parser.add_argument('--image_backbone', type=str, default="dino")
+    parser.add_argument('--image_backbone', type=str, default="clip")
     parser.add_argument('--batch_size', type=int, default=30)
     parser.add_argument('--eval_batch_size', type=int, default=30)
+    parser.add_argument('--test_log_interval', type=int, default=20)
+    parser.add_argument('--save_last_ckpt', action='store_true', default=False)
     args = parser.parse_args()
 
     args.config = f"./exp_configs/{args.dataset}.json"
@@ -241,9 +224,6 @@ if __name__ == "__main__":
         data = f.read()
     config = json.loads(data)
     config = restore_string_to_list_in_a_dict(config)
-
-    print('The configuration is:')
-    print(json.dumps(replace_list_with_string_in_a_dict(copy.deepcopy(config)), indent=4))
 
     global train_config
     global pointnet_config
@@ -267,26 +247,33 @@ if __name__ == "__main__":
         raise Exception('%s dataset is not supported' % train_config['dataset'])
 
     diffusion_hyperparams = calc_diffusion_hyperparams(**diffusion_config)
-    run_name = f"{args.image_backbone}_{args.dataset}_{args.image_fusion_strategy}_cross_conditioning{not args.no_cross_conditioning}_rec{pointnet_config['condition_loss']}_sparseBranch{pointnet_config['include_local_feature']}_interpolation{not args.no_interpolation}"
+    run_name = f"{args.image_backbone}_{args.dataset}_{args.image_fusion_strategy}_cross_conditioning{not args.no_cross_conditioning}_rec{pointnet_config['condition_loss']}_sparseBranch{pointnet_config['include_local_feature']}_interpolation{args.use_interpolation}"
     trainset_config["data_dir"] = os.path.expanduser(trainset_config["data_dir"])
     assert args.image_fusion_strategy in ['none', 'input', 'condition', 'second_condition', 'latent', 'only_clip', 'cross_attention'], f"Invalid image fusion strategy: {args.image_fusion_strategy}"
     assert args.image_backbone in ['clip', 'dino', 'none'], f"Invalid image backbone: {args.image_backbone}"
     if args.model_path != "":
         assert os.path.exists(args.model_path), f"Pretrained model path {args.model_path} does not exist"
         run_name += "_pre" + os.path.basename(args.model_path).split(".")[0]
-    if args.debug:
-        run_name += "_debug"
-    if not trainset_config["mini"]:
-        run_name += f"_full_{trainset_config['category']}"
 
     # override config from args
     pointnet_config['image_fusion_strategy'] = args.image_fusion_strategy
     pointnet_config['use_cross_conditioning'] = not args.no_cross_conditioning
-    pointnet_config['use_interpolation'] = not args.no_interpolation
+    pointnet_config['use_interpolation'] = args.use_interpolation
     pointnet_config['image_backbone'] = args.image_backbone
     trainset_config['batch_size'] = args.batch_size
     trainset_config['eval_batch_size'] = args.batch_size # equal to batch size
     trainset_config['debug'] = args.debug
+    trainset_config['mini'] = args.mini
+    if args.debug:
+        run_name += "_debug"
+    if args.mini:
+        run_name += f"_mini_{trainset_config['category']}"
+    
+    run_name += f"_R{trainset_config['R']}"
+
+    #TODO move config saving to the end
+    print('The configuration is:')
+    print(json.dumps(replace_list_with_string_in_a_dict(copy.deepcopy(config)), indent=4))
 
     train(
         args.config,
