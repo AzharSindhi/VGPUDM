@@ -7,9 +7,7 @@ def get_dataloader(
         args,
         phase='train',
 ):
-    if args['debug']:
-        phase = 'test'
-        augmentation = False
+
     if phase == 'vis':
         args['debug'] = True
         phase = "test"
@@ -28,7 +26,11 @@ def get_dataloader(
         augmentation = False
         if phase == 'test_trainset':
             train = True
-
+    
+    if args['debug']:
+        augmentation = False
+        shuffle = False
+        
     return_augmentation_params = args.get('return_augmentation_params', False)
     if args.get('augment_data_during_generation', False):
         augmentation = args.get('augmentation', False)

@@ -1,5 +1,4 @@
 #!/bin/bash
-# cd pointnet2
 #rm -r exp_pu1k
 #rm -r exp_pugan
 #rm -r exp_scannet

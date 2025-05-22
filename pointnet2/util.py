@@ -12,6 +12,7 @@ import torch.backends.cudnn as cudnn
 import torch.nn.functional as F
 from sklearn.neighbors import NearestNeighbors
 import numpy as np
+from pytorch3d.loss import chamfer_distance
 
 
 def pc_normalize(pc):
@@ -417,6 +418,7 @@ def sampling(
         print_every_n_steps=100,
         label=0,
         condition=None,
+        class_index=None,
         R=1,
         gamma=0.5,
         use_interpolation=True
@@ -448,7 +450,7 @@ def sampling(
                 print('reverse step: %d' % t, flush=True)
             diffusion_steps = (t * torch.ones((size[0],))).cuda()
             x_ = torch.cat([x, i], dim=-1)
-            results = net(x_, condition, ts=diffusion_steps, label=label, use_retained_condition_feature=True)
+            results = net(x_, condition, ts=diffusion_steps, label=label, class_index=class_index, use_retained_condition_feature=True)
             if (isinstance(results, tuple)):
                 epsilon_theta, condition_pre = results
             else:
@@ -461,7 +463,7 @@ def sampling(
             # xt_2 = sigma * z ==> (T-1) t > 0
             item_2 = Sigma[t] * std_normal(size) if t > 0 else 0.0
             # xt = gamma * (xt_1 + xt_2 + i) ==> q(xt-1|xt)
-            x = gamma * (item_1 + item_2 + i)
+            x = item_1 + item_2
             # ---- xt -> xt-1 ----
 
     if not condition is None:
@@ -475,6 +477,7 @@ def sampling_ddim(
         print_every_n_steps=10,
         label=0,
         condition=None,
+        class_index=None,
         R=1,
         gamma=0.5,
         step = 30,
@@ -511,7 +514,8 @@ def sampling_ddim(
                 print('reverse step: %d' % (step+1 if step>0 else step), flush=True)
             diffusion_steps = (t * torch.ones((size[0],))).cuda()
             x_ = torch.cat([x, i], dim=-1)
-            results = net(x_, condition, ts=diffusion_steps, label=label, use_retained_condition_feature=True)
+            # where is the image??
+            results = net(x_, condition, ts=diffusion_steps, label=label, class_index=class_index, use_retained_condition_feature=True)
             if (isinstance(results, tuple)):
                 epsilon_theta, condition_pre = results
             else:
@@ -521,14 +525,11 @@ def sampling_ddim(
             # x0 = (xt - sqrt(1-at_) * noise) / sqrt(at_)
             x0 = (x - torch.sqrt(1 - Alpha_bar[t]) * epsilon_theta) / torch.sqrt(Alpha_bar[t])
             if(t > 0):
-                # sqrt(at-1_) * x0
                 c_xs_1 = torch.sqrt(Alpha_bar[t - 1]) * x0
-                # sqrt(1 - at-1_) * noise
                 c_xs_2 = torch.sqrt(1 - Alpha_bar[t - 1]) * epsilon_theta
-                # xs = gamma * (xs + i) ==> q(xs|x0)
-                x = gamma * (c_xs_1 + c_xs_2 + i)
+                x = c_xs_1 + c_xs_2 # is it converting back to xt-1? assuming x0 is the original input
             else:
-                x = gamma * (x0 + i)
+                x = x0
             # ---- xt -> xs ----
 
     if not condition is None:
@@ -574,6 +575,8 @@ def compute_feature_alignment_loss(features, temperature=1.0):
     
     return main_ldm_loss, cond_ldm_loss
 
+
+
 def training_loss(
         net,
         loss_fn,
@@ -610,7 +613,8 @@ def training_loss(
         noisy, condition_pre = epsilon_theta
         mse_theta = loss_fn(noisy, z)
         mse_psi = loss_fn(condition_pre, condition)
-        loss = mse_theta + alpha * mse_psi
+        cd_loss,_ = chamfer_distance(condition_pre, condition)
+        loss = mse_theta + 0.1 * mse_psi + 0.4 * cd_loss
     else:
         loss = loss_fn(epsilon_theta, z)
         

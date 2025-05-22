@@ -28,7 +28,7 @@ def evaluate(
         scale=1,
         compute_cd=True,
         return_all_metrics=False,
-        R=4,
+        R=1,
         npoints=2048,
         gamma=0.5,
         T=1000,
@@ -327,8 +327,8 @@ if __name__ == "__main__":
     # ignore missing keys while loading checkpoints
     checkpoint = torch.load(args.model_path, map_location='cpu')
     state_dict = checkpoint['model_state_dict']
-    filtered_state_dict = {k: v for k, v in state_dict.items() if k in net.state_dict()}
-    net.load_state_dict(filtered_state_dict, strict=False)
+    # filtered_state_dict = {k: v for k, v in state_dict.items() if k in net.state_dict()}
+    net.load_state_dict(state_dict, strict=True)
     # optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     # start_epoch = checkpoint.get('epoch', 0)
     # n_epochs = start_epoch + n_epochs
@@ -348,7 +348,7 @@ if __name__ == "__main__":
         return_all_metrics=False,
         R=trainset_config["R"],
         npoints=trainset_config["npoints"],
-        gamma=pointnet_config["gamma"],
+        gamma=args.gamma,
         T=diffusion_config["T"],
         step=30,
         mesh_path = None,

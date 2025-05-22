@@ -116,7 +116,7 @@ def train(config_file, model_path, dataset, root_directory, run_name, n_epochs, 
 
     trainloader = get_dataloader(trainset_config)
     testloader = get_dataloader(trainset_config, phase='test')
-    vis_dataloader = get_dataloader(trainset_config, phase='vis')
+    vis_dataloader = get_dataloader(trainset_config, phase='train')
     net = PointNet2CloudCondition(pointnet_config).cuda()
     start_epoch = 0
     best_test_loss = float('inf')
@@ -166,12 +166,12 @@ def train(config_file, model_path, dataset, root_directory, run_name, n_epochs, 
             
             if epoch % test_log_interval == 0:
                 test_loss = evaluate(net, testloader, diffusion_hyperparams, use_interpolation, progress, test_task)
-                if test_loss < best_test_loss:
-                    best_test_loss = test_loss
-                    early_stopping_counter = 0
-                    torch.save(checkpoint, os.path.join(output_directory, 'best_checkpoint.pt'))
-                else:
-                    early_stopping_counter += 1
+                # if test_loss < best_test_loss:
+                #     best_test_loss = test_loss
+                #     early_stopping_counter = 0
+                #     torch.save(checkpoint, os.path.join(output_directory, 'best_checkpoint.pt'))
+                # else:
+                #     early_stopping_counter += 1
 
                 cd_meter_avg, hd_meter_avg = run_samples(net, vis_dataloader, vis_dir, args.use_interpolation)
                 tb.add_scalar('CD_best', cd_meter_avg, epoch)
@@ -181,8 +181,7 @@ def train(config_file, model_path, dataset, root_directory, run_name, n_epochs, 
                 # scheduler.step(test_loss)
             
             epoch_duration = time.time() - epoch_start_time
-            if args.save_last_ckpt:
-                torch.save(checkpoint, os.path.join(output_directory, 'latest_checkpoint.pt'))
+            torch.save(checkpoint, os.path.join(output_directory, 'latest_checkpoint.pt'))
             
             console.print(f"[green]Epoch Duration: {epoch_duration:.2f}s | Train Loss: {train_loss:.4f} | Test Loss: {test_loss:.4f} | CD_best: {cd_meter_avg:.4f} | HD_best: {hd_meter_avg:.4f}[/green]")
             tb.add_scalar('Log-Train-Loss', train_loss, epoch)
